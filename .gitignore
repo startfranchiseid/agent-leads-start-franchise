@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Environment variables (RAHASIA - jangan pernah di-commit!)
+.env
+
+# Sesi login Baileys (berisi kredensial WhatsApp)
+auth_info_baileys/
+
+# Log files
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

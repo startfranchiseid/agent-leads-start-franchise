@@ -71,7 +71,7 @@ async function initDB() {
     conn.release();
 
     // Migrate
-    await pool.execute(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS comments (
         id VARCHAR(20) PRIMARY KEY,
         article_slug VARCHAR(255) NOT NULL,
@@ -85,7 +85,7 @@ async function initDB() {
         INDEX idx_slug (article_slug)
       )
     `);
-    await pool.execute(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS comment_reactions (
         id VARCHAR(20) PRIMARY KEY,
         comment_id VARCHAR(20) NOT NULL,
@@ -111,7 +111,7 @@ app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Art
 app.get('/api/comments', async (req, res) => {
   try {
     const slug = req.query.slug || '';
-    const [rows] = await pool.execute(
+    const [rows] = await pool.query(
       'SELECT * FROM comments WHERE article_slug = ? ORDER BY created_at DESC',
       [slug]
     );
@@ -157,7 +157,7 @@ app.post('/api/comments', async (req, res) => {
     const cleanMessage = censorText(message);
     const cleanName = censorText(name);
 
-    await pool.execute(
+    await pool.query(
       'INSERT INTO comments (id, article_slug, parent_id, name, email, message) VALUES (?, ?, ?, ?, ?, ?)',
       [id, article_slug, parent_id || null, cleanName, email || '', cleanMessage]
     );
@@ -180,12 +180,12 @@ app.delete('/api/comments/:id', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'ID komentar diperlukan' });
 
     // Delete replies first
-    await pool.execute('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
-    await pool.execute('DELETE FROM comments WHERE parent_id = ?', [id]);
+    await pool.query('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
+    await pool.query('DELETE FROM comments WHERE parent_id = ?', [id]);
     // Delete reactions for this comment
-    await pool.execute('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
+    await pool.query('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
     // Delete comment itself
-    const [result] = await pool.execute('DELETE FROM comments WHERE id = ?', [id]);
+    const [result] = await pool.query('DELETE FROM comments WHERE id = ?', [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Komentar tidak ditemukan' });
@@ -208,7 +208,7 @@ app.post('/api/react', async (req, res) => {
       return res.status(400).json({ error: 'Data reaksi tidak valid' });
     }
 
-    const [existing] = await pool.execute(
+    const [existing] = await pool.query(
       'SELECT * FROM comment_reactions WHERE comment_id = ? AND user_fingerprint = ?',
       [comment_id, user_fingerprint]
     );
@@ -216,24 +216,24 @@ app.post('/api/react', async (req, res) => {
     if (existing.length > 0) {
       const old = existing[0];
       if (old.reaction_type === reaction_type) {
-        await pool.execute('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
-        await pool.execute(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [comment_id]);
+        await pool.query('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
+        await pool.query(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [comment_id]);
         return res.json({ action: 'removed' });
       } else {
-        await pool.execute('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
+        await pool.query('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
         const oldCol = old.reaction_type + 's';
         const newCol = reaction_type + 's';
-        await pool.execute(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [comment_id]);
+        await pool.query(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [comment_id]);
         return res.json({ action: 'switched' });
       }
     }
 
     const rId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    await pool.execute(
+    await pool.query(
       'INSERT INTO comment_reactions (id, comment_id, user_fingerprint, reaction_type) VALUES (?, ?, ?, ?)',
       [rId, comment_id, user_fingerprint, reaction_type]
     );
-    await pool.execute(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [comment_id]);
+    await pool.query(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [comment_id]);
 
     res.json({ action: 'added' });
   } catch (err) {

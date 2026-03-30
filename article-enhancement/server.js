@@ -18,6 +18,28 @@ app.use(express.json({ limit: '5mb' }));
 const DB_URL = process.env.DATABASE_URL;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
+// ─── SQL HELPER: client-side escaping (TiDB compatible) ───────
+// TiDB Cloud doesn't handle mysql2 binary protocol parameterized queries.
+// We build the SQL string locally with proper escaping instead.
+function esc(val) {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'boolean') return val ? '1' : '0';
+  const str = String(val)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\0/g, '\\0');
+  return `'${str}'`;
+}
+
+function q(sql, vals = []) {
+  let i = 0;
+  const built = sql.replace(/\?/g, () => esc(vals[i++]));
+  return pool.query(built);
+}
+
 // ─── PROFANITY FILTER ─────────────────────────────────────────
 const BAD_WORDS = [
   'anjing','babi','bangsat','bajingan','brengsek','tolol','goblok','idiot',
@@ -60,17 +82,13 @@ async function initDB() {
       ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: false },
       waitForConnections: true,
       connectionLimit: 5,
-      connectTimeout: 10000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000
+      connectTimeout: 10000
     });
 
-    // Test connection
     const conn = await pool.getConnection();
     console.log('✅ Database connected');
     conn.release();
 
-    // Migrate
     await pool.query(`
       CREATE TABLE IF NOT EXISTS comments (
         id VARCHAR(20) PRIMARY KEY,
@@ -95,7 +113,7 @@ async function initDB() {
         UNIQUE KEY unique_reaction (comment_id, user_fingerprint)
       )
     `);
-    console.log('✅ Tables migrated');
+    console.log('✅ Tables ready');
   } catch (err) {
     console.error('❌ DB Init Error:', err.message);
     throw err;
@@ -103,7 +121,7 @@ async function initDB() {
 }
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Article API' }));
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Article API v2' }));
 
 // ═══════════════════════════════════════════════════════════════
 // GET COMMENTS
@@ -111,7 +129,7 @@ app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Art
 app.get('/api/comments', async (req, res) => {
   try {
     const slug = req.query.slug || '';
-    const [rows] = await pool.query(
+    const [rows] = await q(
       'SELECT * FROM comments WHERE article_slug = ? ORDER BY created_at DESC',
       [slug]
     );
@@ -144,8 +162,6 @@ app.post('/api/comments', async (req, res) => {
     if (!name || !message || !article_slug) {
       return res.status(400).json({ error: 'Nama, pesan, dan slug wajib diisi' });
     }
-
-    // Profanity check
     if (containsProfanity(name)) {
       return res.status(400).json({ error: 'Nama mengandung kata tidak pantas' });
     }
@@ -156,10 +172,11 @@ app.post('/api/comments', async (req, res) => {
     const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     const cleanMessage = censorText(message);
     const cleanName = censorText(name);
+    const pid = parent_id || null;
 
-    await pool.query(
+    await q(
       'INSERT INTO comments (id, article_slug, parent_id, name, email, message) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, article_slug, parent_id || null, cleanName, email || '', cleanMessage]
+      [id, article_slug, pid, cleanName, email || '', cleanMessage]
     );
 
     res.json({ success: true, id });
@@ -175,22 +192,16 @@ app.post('/api/comments', async (req, res) => {
 app.delete('/api/comments/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { fingerprint } = req.query;
-
     if (!id) return res.status(400).json({ error: 'ID komentar diperlukan' });
 
-    // Delete replies first
-    await pool.query('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
-    await pool.query('DELETE FROM comments WHERE parent_id = ?', [id]);
-    // Delete reactions for this comment
-    await pool.query('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
-    // Delete comment itself
-    const [result] = await pool.query('DELETE FROM comments WHERE id = ?', [id]);
+    await q('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
+    await q('DELETE FROM comments WHERE parent_id = ?', [id]);
+    await q('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
+    const [result] = await q('DELETE FROM comments WHERE id = ?', [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Komentar tidak ditemukan' });
     }
-
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/comments error:', err.message);
@@ -208,7 +219,7 @@ app.post('/api/react', async (req, res) => {
       return res.status(400).json({ error: 'Data reaksi tidak valid' });
     }
 
-    const [existing] = await pool.query(
+    const [existing] = await q(
       'SELECT * FROM comment_reactions WHERE comment_id = ? AND user_fingerprint = ?',
       [comment_id, user_fingerprint]
     );
@@ -216,24 +227,24 @@ app.post('/api/react', async (req, res) => {
     if (existing.length > 0) {
       const old = existing[0];
       if (old.reaction_type === reaction_type) {
-        await pool.query('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
-        await pool.query(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [comment_id]);
+        await q('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
+        await q(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [comment_id]);
         return res.json({ action: 'removed' });
       } else {
-        await pool.query('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
+        await q('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
         const oldCol = old.reaction_type + 's';
         const newCol = reaction_type + 's';
-        await pool.query(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [comment_id]);
+        await q(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [comment_id]);
         return res.json({ action: 'switched' });
       }
     }
 
     const rId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    await pool.query(
+    await q(
       'INSERT INTO comment_reactions (id, comment_id, user_fingerprint, reaction_type) VALUES (?, ?, ?, ?)',
       [rId, comment_id, user_fingerprint, reaction_type]
     );
-    await pool.query(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [comment_id]);
+    await q(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [comment_id]);
 
     res.json({ action: 'added' });
   } catch (err) {
@@ -271,8 +282,7 @@ ATURAN KETAT:
 5. Jawab dalam Bahasa Indonesia, ramah, ringkas, dan informatif.
 
 ══════════════════════════════
-JUDUL ARTIKEL:
-${articleTitle}
+JUDUL ARTIKEL: ${articleTitle}
 
 ISI LENGKAP ARTIKEL:
 ${articleContent}
@@ -287,7 +297,6 @@ ${articleContent}
 
     const data = await response.json();
     if (data.error) return res.json({ error: data.error.message });
-
     res.json({ reply: data.choices[0].message.content });
   } catch (err) {
     res.json({ error: 'AI service error: ' + err.message });
@@ -299,6 +308,5 @@ initDB().then(() => {
   app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 }).catch(err => {
   console.error('❌ Fatal DB Error:', err.message);
-  // Start server anyway to show health check
-  app.listen(PORT, () => console.log(`⚠️ Server running on port ${PORT} (DB not connected)`));
+  app.listen(PORT, () => console.log(`⚠️ Server on port ${PORT} (DB disconnected)`));
 });

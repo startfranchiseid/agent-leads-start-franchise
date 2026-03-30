@@ -18,28 +18,6 @@ app.use(express.json({ limit: '5mb' }));
 const DB_URL = process.env.DATABASE_URL;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
-// ─── SQL HELPER: client-side escaping (TiDB compatible) ───────
-// TiDB Cloud doesn't handle mysql2 binary protocol parameterized queries.
-// We build the SQL string locally with proper escaping instead.
-function esc(val) {
-  if (val === null || val === undefined) return 'NULL';
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'boolean') return val ? '1' : '0';
-  const str = String(val)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\0/g, '\\0');
-  return `'${str}'`;
-}
-
-function q(sql, vals = []) {
-  let i = 0;
-  const built = sql.replace(/\?/g, () => esc(vals[i++]));
-  return pool.query(built);
-}
-
 // ─── PROFANITY FILTER ─────────────────────────────────────────
 const BAD_WORDS = [
   'anjing','babi','bangsat','bajingan','brengsek','tolol','goblok','idiot',
@@ -89,31 +67,9 @@ async function initDB() {
     console.log('✅ Database connected');
     conn.release();
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS comments (
-        id VARCHAR(20) PRIMARY KEY,
-        article_slug VARCHAR(255) NOT NULL,
-        parent_id VARCHAR(20) DEFAULT NULL,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) DEFAULT '',
-        message TEXT NOT NULL,
-        likes INT DEFAULT 0,
-        dislikes INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_slug (article_slug)
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS comment_reactions (
-        id VARCHAR(20) PRIMARY KEY,
-        comment_id VARCHAR(20) NOT NULL,
-        user_fingerprint VARCHAR(100) NOT NULL,
-        reaction_type ENUM('like','dislike') NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_reaction (comment_id, user_fingerprint)
-      )
-    `);
-    console.log('✅ Tables ready');
+    // The tables already exist as int auto_increment from the legacy database.
+    // So we don't need to force varchar(20) keys here anymore.
+    console.log('✅ Database ready');
   } catch (err) {
     console.error('❌ DB Init Error:', err.message);
     throw err;
@@ -121,7 +77,7 @@ async function initDB() {
 }
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Article API v2' }));
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Article API v3' }));
 
 // ═══════════════════════════════════════════════════════════════
 // GET COMMENTS
@@ -129,7 +85,7 @@ app.get('/', (req, res) => res.json({ status: 'ok', service: 'StartFranchise Art
 app.get('/api/comments', async (req, res) => {
   try {
     const slug = req.query.slug || '';
-    const [rows] = await q(
+    const [rows] = await pool.execute(
       'SELECT * FROM comments WHERE article_slug = ? ORDER BY created_at DESC',
       [slug]
     );
@@ -169,17 +125,16 @@ app.post('/api/comments', async (req, res) => {
       return res.status(400).json({ error: 'Komentar mengandung kata tidak pantas. Mohon gunakan bahasa yang sopan.' });
     }
 
-    const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     const cleanMessage = censorText(message);
     const cleanName = censorText(name);
-    const pid = parent_id || null;
+    const pid = parent_id ? parseInt(parent_id, 10) : null;
 
-    await q(
-      'INSERT INTO comments (id, article_slug, parent_id, name, email, message) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, article_slug, pid, cleanName, email || '', cleanMessage]
+    const [result] = await pool.execute(
+      'INSERT INTO comments (article_slug, parent_id, name, email, message) VALUES (?, ?, ?, ?, ?)',
+      [article_slug, pid, cleanName, email || '', cleanMessage]
     );
 
-    res.json({ success: true, id });
+    res.json({ success: true, id: result.insertId });
   } catch (err) {
     console.error('POST /api/comments error:', err.message);
     res.status(500).json({ error: 'Gagal mengirim komentar: ' + err.message });
@@ -191,13 +146,13 @@ app.post('/api/comments', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 app.delete('/api/comments/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID komentar diperlukan' });
 
-    await q('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
-    await q('DELETE FROM comments WHERE parent_id = ?', [id]);
-    await q('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
-    const [result] = await q('DELETE FROM comments WHERE id = ?', [id]);
+    await pool.execute('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
+    await pool.execute('DELETE FROM comments WHERE parent_id = ?', [id]);
+    await pool.execute('DELETE FROM comment_reactions WHERE comment_id = ?', [id]);
+    const [result] = await pool.execute('DELETE FROM comments WHERE id = ?', [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Komentar tidak ditemukan' });
@@ -219,32 +174,33 @@ app.post('/api/react', async (req, res) => {
       return res.status(400).json({ error: 'Data reaksi tidak valid' });
     }
 
-    const [existing] = await q(
+    const cid = parseInt(comment_id, 10);
+
+    const [existing] = await pool.execute(
       'SELECT * FROM comment_reactions WHERE comment_id = ? AND user_fingerprint = ?',
-      [comment_id, user_fingerprint]
+      [cid, user_fingerprint]
     );
 
     if (existing.length > 0) {
       const old = existing[0];
       if (old.reaction_type === reaction_type) {
-        await q('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
-        await q(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [comment_id]);
+        await pool.execute('DELETE FROM comment_reactions WHERE id = ?', [old.id]);
+        await pool.execute(`UPDATE comments SET ${reaction_type}s = GREATEST(0, ${reaction_type}s - 1) WHERE id = ?`, [cid]);
         return res.json({ action: 'removed' });
       } else {
-        await q('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
+        await pool.execute('UPDATE comment_reactions SET reaction_type = ? WHERE id = ?', [reaction_type, old.id]);
         const oldCol = old.reaction_type + 's';
         const newCol = reaction_type + 's';
-        await q(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [comment_id]);
+        await pool.execute(`UPDATE comments SET ${oldCol} = GREATEST(0, ${oldCol} - 1), ${newCol} = ${newCol} + 1 WHERE id = ?`, [cid]);
         return res.json({ action: 'switched' });
       }
     }
 
-    const rId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    await q(
-      'INSERT INTO comment_reactions (id, comment_id, user_fingerprint, reaction_type) VALUES (?, ?, ?, ?)',
-      [rId, comment_id, user_fingerprint, reaction_type]
+    await pool.execute(
+      'INSERT INTO comment_reactions (comment_id, user_fingerprint, reaction_type) VALUES (?, ?, ?)',
+      [cid, user_fingerprint, reaction_type]
     );
-    await q(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [comment_id]);
+    await pool.execute(`UPDATE comments SET ${reaction_type}s = ${reaction_type}s + 1 WHERE id = ?`, [cid]);
 
     res.json({ action: 'added' });
   } catch (err) {

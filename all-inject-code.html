@@ -1,0 +1,3764 @@
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WQMKK97V" height="0" width="0"
+        style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5DXKSJHQ" height="0" width="0"
+        style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<script>
+    /* ============================================= */
+    /* UNIFIED SEARCH SYSTEM v11.0 FINAL            */
+    /* Article: Original working script             */
+    /* Merchant: Category + Price Filter (Fixed)    */
+    /* Author: @Ahmadlazim-03                       */
+    /* Date: 2025-01-14                             */
+    /* ============================================= */
+
+    // ========================= //
+    // ARTICLE PAGE SEARCH       //
+    // + MULTI-PAGE PAGINATION   //
+    // + AJAX FETCH ALL PAGES    //
+    // + SQUARESPACE OFFSET FMT  //
+    // ========================= //
+    (function () {
+        'use strict';
+
+        const CONFIG = {
+            collectionId: '#collection-682ec1d194b8a51d6d2c126c',
+            enableRibbon: false,
+            placeholder: 'Cari artikel / produk...',
+            noResultsText: 'Tidak ada hasil untuk kata kunci tersebut.',
+            resultSuffix: ' hasil',
+            debounceDelay: 300,
+            itemsPerPage: 12
+        };
+
+        const root = document.querySelector(CONFIG.collectionId);
+        if (!root) {
+            console.warn('⚠️ StartFranchise Search: Collection not found');
+            return;
+        }
+
+        let grid = root.querySelector('.blog-basic-grid');
+        let gridContainer = grid ? grid.parentElement : null;
+
+        if (!gridContainer) {
+            gridContainer = root.querySelector('.collection-content-wrapper') ||
+                root.querySelector('[data-controller="BlogImageLoader"]') ||
+                root;
+        }
+
+        if (!grid) {
+            grid = gridContainer.querySelector('.blog-basic-grid');
+        }
+
+        if (!grid) {
+            console.warn('⚠️ StartFranchise Search: Grid not found');
+            return;
+        }
+
+        // ========================= //
+        // VARIABLES                 //
+        // ========================= //
+        let allArticles = [];
+        let isLoading = false;
+        let currentSearchPage = 1;
+        let currentSearchResults = [];
+
+        const mainWrapper = document.createElement('div');
+        mainWrapper.className = 'sf-main-wrapper';
+
+        const gridParent = grid.parentElement;
+        gridParent.insertBefore(mainWrapper, grid);
+
+        const searchWrapper = document.createElement('div');
+        searchWrapper.className = 'sf-search-bar-wrapper';
+        searchWrapper.innerHTML = `
+    <div class="sf-search-container">
+      <form class="sf-search-form" role="search" aria-label="Pencarian artikel" autocomplete="off">
+        <svg class="sf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input 
+          type="search" 
+          class="sf-search-input" 
+          placeholder="${CONFIG.placeholder}" 
+          aria-label="Ketik kata kunci untuk mencari"
+          autocomplete="off"
+          spellcheck="false">
+        <button 
+          type="button" 
+          class="sf-search-clear" 
+          aria-label="Hapus pencarian"
+          title="Hapus">×</button>
+      </form>
+      <div class="sf-search-meta" role="status" aria-live="polite">
+        <span class="sf-results-count"></span>
+        <span class="sf-loading-indicator" style="display:none;">⏳ Memuat artikel...</span>
+      </div>
+    </div>
+    <div class="sf-no-results" role="alert" aria-live="assertive">
+      ${CONFIG.noResultsText}
+    </div>
+  `;
+
+        // Container untuk hasil pencarian - menggunakan innerHTML dengan styling inline lengkap
+        const searchResultsContainer = document.createElement('div');
+        searchResultsContainer.className = 'sf-search-results-container';
+        searchResultsContainer.id = 'sf-search-results';
+
+        // Pagination wrapper untuk hasil pencarian
+        const searchPaginationWrapper = document.createElement('div');
+        searchPaginationWrapper.className = 'sf-search-pagination';
+        searchPaginationWrapper.id = 'sf-search-pagination';
+
+        mainWrapper.appendChild(searchWrapper);
+        // Masukkan container hasil SETELAH searchWrapper tapi SEBELUM grid
+        searchWrapper.insertAdjacentElement('afterend', searchResultsContainer);
+        mainWrapper.appendChild(grid);
+        // Masukkan pagination SETELAH grid
+        grid.insertAdjacentElement('afterend', searchPaginationWrapper);
+
+        const input = searchWrapper.querySelector('.sf-search-input');
+        const clearBtn = searchWrapper.querySelector('.sf-search-clear');
+        const countEl = searchWrapper.querySelector('.sf-results-count');
+        const noResultsEl = searchWrapper.querySelector('.sf-no-results');
+        const form = searchWrapper.querySelector('.sf-search-form');
+        const loadingIndicator = searchWrapper.querySelector('.sf-loading-indicator');
+        const cards = Array.from(grid.querySelectorAll('.blog-basic-grid--container'));
+
+        // ========================= //
+        // EXTRACT ARTICLE DATA      //
+        // ========================= //
+        function extractArticleData(card, pageNum = 1) {
+            const titleEl = card.querySelector('.blog-title a');
+            const authorEl = card.querySelector('.blog-author');
+            const dateEl = card.querySelector('.blog-date');
+            const imageEl = card.querySelector('.blog-image img, .blog-basic-grid--image img, .image-wrapper img');
+            const excerptEl = card.querySelector('.blog-excerpt');
+            const categoriesEl = card.querySelectorAll('.blog-categories');
+
+            let categories = [];
+            categoriesEl.forEach(cat => categories.push(cat.textContent.trim()));
+
+            return {
+                title: titleEl?.textContent?.trim() || '',
+                url: titleEl?.getAttribute('href') || '#',
+                author: authorEl?.textContent?.trim() || '',
+                date: dateEl?.textContent?.trim() || '',
+                image: imageEl?.getAttribute('src') || imageEl?.getAttribute('data-src') || '',
+                excerpt: excerptEl?.textContent?.trim() || '',
+                categories: categories,
+                pageNum: pageNum
+            };
+        }
+
+        // ========================= //
+        // FETCH ALL PAGES           //
+        // ========================= //
+        async function fetchAllArticles() {
+            if (allArticles.length > 0 || isLoading) return;
+
+            isLoading = true;
+            loadingIndicator.style.display = 'inline';
+
+            // Tambahkan artikel dari halaman saat ini
+            cards.forEach(card => {
+                allArticles.push(extractArticleData(card, 1));
+            });
+
+            console.log('%c📄 Current page articles:', 'color: #666;', cards.length);
+
+            // Cari pagination - Squarespace uses .blog-list-pagination
+            const paginationContainer = root.querySelector('.blog-list-pagination') ||
+                root.querySelector('nav.blog-list-pagination') ||
+                document.querySelector('.blog-list-pagination');
+
+            if (paginationContainer) {
+                console.log('%c🔍 Pagination container found', 'color: #10B981;');
+
+                // Check for "Older Posts" link with offset
+                const olderLink = paginationContainer.querySelector('.older a');
+                if (olderLink) {
+                    const firstOffsetUrl = olderLink.getAttribute('href');
+                    if (firstOffsetUrl) {
+                        await fetchPagesRecursively(firstOffsetUrl, 2);
+                    }
+                }
+            } else {
+                console.log('%c⚠️ No pagination found - single page only', 'color: #F59E0B;');
+            }
+
+            isLoading = false;
+            loadingIndicator.style.display = 'none';
+
+            console.log(`%c✅ Loaded ${allArticles.length} articles from all pages`, 'color: #10B981; font-weight: bold;');
+        }
+
+        // ========================= //
+        // RECURSIVE PAGE FETCH      //
+        // ========================= //
+        async function fetchPagesRecursively(url, pageNum) {
+            try {
+                const fullUrl = url.startsWith('/') ? window.location.origin + url : url;
+                console.log(`%c📥 Fetching page ${pageNum}: ${fullUrl}`, 'color: #6366F1;');
+
+                const response = await fetch(fullUrl);
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+
+                const pageGrid = doc.querySelector('.blog-basic-grid');
+                if (pageGrid) {
+                    const pageCards = pageGrid.querySelectorAll('.blog-basic-grid--container');
+                    pageCards.forEach(card => {
+                        allArticles.push(extractArticleData(card, pageNum));
+                    });
+                    console.log(`%c📄 Page ${pageNum}: Found ${pageCards.length} articles`, 'color: #666;');
+                }
+
+                // Check for next page
+                const nextPagination = doc.querySelector('.blog-list-pagination .older a');
+                if (nextPagination) {
+                    const nextUrl = nextPagination.getAttribute('href');
+                    if (nextUrl) {
+                        await fetchPagesRecursively(nextUrl, pageNum + 1);
+                    }
+                }
+            } catch (error) {
+                console.warn(`⚠️ Gagal memuat halaman ${pageNum}:`, error);
+            }
+        }
+
+        // ========================= //
+        // CREATE SEARCH RESULT CARD //
+        // ========================= //
+        function createSearchResultCard(article, keyword) {
+            const card = document.createElement('div');
+            card.className = 'blog-basic-grid--container sf-search-result-card entry blog-item';
+            card.style.cssText = `
+                background: #fff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                transition: all 0.3s ease;
+            `;
+
+            let highlightedTitle = article.title;
+            if (keyword) {
+                const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(${escapedKeyword})`, 'gi');
+                highlightedTitle = article.title.replace(regex, '<mark class="sf-highlight" style="background:linear-gradient(120deg,#fef08a 0%,#fde047 100%);padding:2px 4px;border-radius:3px;">$1</mark>');
+            }
+
+            card.innerHTML = `
+                <div>
+                    ${article.image ? `
+                    <a href="${article.url}" class="image-wrapper" style="display:block;position:relative;padding-bottom:66.5%;overflow:hidden;background:#f3f4f6;">
+                        <img src="${article.image}" alt="${article.title}" loading="lazy" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;">
+                    </a>
+                    <div class="blog-article-spacer"></div>` : ''}
+                </div>
+                <div class="blog-basic-grid--text" style="padding:16px;">
+                    <div class="blog-meta-section">
+                        <span class="blog-meta-primary">
+                            ${article.date ? `<time class="blog-date" style="color:#6b7280;font-size:13px;">${article.date}</time>` : ''}
+                        </span>
+                    </div>
+                    <h1 class="blog-title" style="font-size:16px;font-weight:600;margin:8px 0;line-height:1.4;">
+                        <a href="${article.url}" style="color:#1f2937;text-decoration:none;">${highlightedTitle}</a>
+                    </h1>
+                    ${article.author ? `<span class="blog-author" style="color:#6b7280;font-size:13px;display:block;">${article.author}</span>` : ''}
+                    ${article.excerpt ? `<div class="blog-excerpt" style="margin-top:8px;"><p style="color:#4b5563;font-size:14px;line-height:1.5;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${article.excerpt.substring(0, 150)}...</p></div>` : ''}
+                    <a class="blog-more-link" href="${article.url}" style="display:inline-block;margin-top:12px;color:#2563eb;font-size:14px;text-decoration:none;">Read More</a>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // ========================= //
+        // RENDER SEARCH RESULTS     //
+        // ========================= //
+        function renderSearchResults(results, keyword, page = 1) {
+            currentSearchResults = results;
+            currentSearchPage = page;
+
+            const totalPages = Math.ceil(results.length / CONFIG.itemsPerPage);
+            const start = (page - 1) * CONFIG.itemsPerPage;
+            const end = start + CONFIG.itemsPerPage;
+            const pageResults = results.slice(start, end);
+
+            console.log('%c🔍 Rendering results:', 'color: #6366F1;', pageResults.length, 'of', results.length);
+
+            // Sembunyikan pagination asli Squarespace
+            const originalPagination = root.querySelector('.blog-list-pagination');
+            if (originalPagination) {
+                originalPagination.style.display = 'none';
+            }
+
+            if (results.length === 0) {
+                // Sembunyikan semua card asli dan container hasil
+                cards.forEach(card => card.style.display = 'none');
+                searchResultsContainer.style.display = 'none';
+                grid.style.display = 'none';
+                noResultsEl.style.display = keyword ? 'block' : 'none';
+                countEl.textContent = '0' + CONFIG.resultSuffix;
+                searchPaginationWrapper.style.display = 'none';
+                return;
+            }
+
+            noResultsEl.style.display = 'none';
+
+            // Sembunyikan grid asli sepenuhnya
+            grid.style.display = 'none';
+
+            // Render hasil ke searchResultsContainer dengan HTML inline
+            let cardsHTML = pageResults.map(article => {
+                let highlightedTitle = article.title;
+                if (keyword) {
+                    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${escapedKeyword})`, 'gi');
+                    highlightedTitle = article.title.replace(regex, '<mark style="background:linear-gradient(120deg,#fef08a 0%,#fde047 100%);padding:2px 4px;border-radius:3px;">$1</mark>');
+                }
+
+                return `
+                <article style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+                    ${article.image ? `
+                    <a href="${article.url}" style="display:block;position:relative;padding-bottom:66%;overflow:hidden;background:#f3f4f6;">
+                        <img src="${article.image}" alt="${article.title}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;" loading="lazy">
+                    </a>` : ''}
+                    <div style="padding:16px;">
+                        ${article.date ? `<time style="color:#6b7280;font-size:12px;display:block;margin-bottom:8px;">${article.date}</time>` : ''}
+                        <h2 style="margin:0 0 12px 0;font-size:15px;font-weight:600;line-height:1.4;color:#007CE6;">
+                            <a href="${article.url}" style="color:#007CE6;text-decoration:none;">${highlightedTitle}</a>
+                        </h2>
+                        <a href="${article.url}" style="display:inline-block;padding:10px 20px;background:#007CE6;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">Read More</a>
+                    </div>
+                </article>`;
+            }).join('');
+
+            // Set innerHTML dengan styling container - GRID 3 KOLOM
+            searchResultsContainer.innerHTML = cardsHTML;
+            searchResultsContainer.style.cssText = `
+                display: grid !important;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 24px;
+                padding: 20px 0;
+                visibility: visible !important;
+                opacity: 1 !important;
+            `;
+
+            console.log('%c✅ Rendered HTML results:', 'color: #10B981;', pageResults.length);
+
+            countEl.textContent = results.length + CONFIG.resultSuffix;
+            countEl.setAttribute('aria-label', `Ditemukan ${results.length} artikel`);
+
+            // Render pagination jika perlu
+            if (totalPages > 1) {
+                renderSearchPagination(results.length, totalPages, page, keyword);
+                searchPaginationWrapper.style.cssText = 'display:flex !important;justify-content:center;align-items:center;gap:8px;padding:20px 0;flex-wrap:wrap;';
+            } else {
+                searchPaginationWrapper.style.display = 'none';
+            }
+        }
+
+        // ========================= //
+        // RENDER SEARCH PAGINATION  //
+        // ========================= //
+        function renderSearchPagination(totalItems, totalPages, currentPage, keyword) {
+            const start = (currentPage - 1) * CONFIG.itemsPerPage + 1;
+            const end = Math.min(currentPage * CONFIG.itemsPerPage, totalItems);
+
+            let html = `<div class="sf-pagination-info">Menampilkan ${start}-${end} dari ${totalItems} artikel</div>`;
+
+            html += `<button class="sf-pagination-btn ${currentPage === 1 ? 'disabled' : ''}" data-page="${currentPage - 1}">← Prev</button>`;
+
+            const maxButtons = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+            if (endPage - startPage < maxButtons - 1) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+
+            if (startPage > 1) {
+                html += `<button class="sf-pagination-btn" data-page="1">1</button>`;
+                if (startPage > 2) html += `<span class="sf-pagination-dots">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="sf-pagination-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) html += `<span class="sf-pagination-dots">...</span>`;
+                html += `<button class="sf-pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
+            }
+
+            html += `<button class="sf-pagination-btn ${currentPage === totalPages ? 'disabled' : ''}" data-page="${currentPage + 1}">Next →</button>`;
+
+            searchPaginationWrapper.innerHTML = html;
+
+            searchPaginationWrapper.querySelectorAll('.sf-pagination-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const page = parseInt(e.currentTarget.dataset.page);
+                    if (!isNaN(page) && !e.currentTarget.classList.contains('disabled')) {
+                        renderSearchResults(currentSearchResults, keyword, page);
+                        searchResultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+            });
+        }
+
+        // ========================= //
+        // SEARCH ARTICLES           //
+        // ========================= //
+        async function searchArticles(term) {
+            const keyword = term.trim().toLowerCase();
+
+            if (!keyword) {
+                // Reset ke tampilan asli
+                // Sembunyikan container hasil pencarian
+                searchResultsContainer.style.display = 'none';
+                searchResultsContainer.innerHTML = '';
+
+                // Tampilkan kembali grid asli
+                grid.style.display = '';
+
+                // Tampilkan kembali semua card asli
+                cards.forEach(card => {
+                    card.style.display = '';
+                    card.classList.remove('is-filtered-out');
+                    const titleEl = card.querySelector('.blog-title');
+                    highlightText(titleEl, '');
+                });
+
+                // Tampilkan kembali pagination asli Squarespace
+                const originalPagination = root.querySelector('.blog-list-pagination');
+                if (originalPagination) {
+                    originalPagination.style.display = '';
+                }
+
+                searchPaginationWrapper.style.display = 'none';
+                noResultsEl.style.display = 'none';
+                countEl.textContent = cards.length + CONFIG.resultSuffix;
+                clearBtn.style.display = 'none';
+                return;
+            }
+
+            clearBtn.style.display = 'flex';
+
+            // Fetch semua artikel jika belum
+            await fetchAllArticles();
+
+            // Filter artikel berdasarkan keyword
+            const results = allArticles.filter(article => {
+                const searchableText = [
+                    article.title,
+                    article.author,
+                    article.date,
+                    article.excerpt,
+                    article.categories.join(' ')
+                ].join(' ').toLowerCase();
+
+                return searchableText.includes(keyword);
+            });
+
+            renderSearchResults(results, keyword, 1);
+        }
+
+        // ========================= //
+        // HIGHLIGHT TEXT            //
+        // ========================= //
+        function highlightText(element, keyword) {
+            const anchor = element?.querySelector('a');
+            if (!anchor) return;
+
+            if (!anchor.hasAttribute('data-original-text')) {
+                anchor.setAttribute('data-original-text', anchor.textContent);
+            }
+
+            const originalText = anchor.getAttribute('data-original-text');
+
+            if (!keyword) {
+                anchor.innerHTML = originalText;
+                return;
+            }
+
+            const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedKeyword})`, 'gi');
+
+            anchor.innerHTML = originalText.replace(regex, '<mark class="sf-highlight">$1</mark>');
+        }
+
+        // ========================= //
+        // DEBOUNCE                  //
+        // ========================= //
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        const debouncedSearch = debounce((value) => {
+            searchArticles(value);
+        }, CONFIG.debounceDelay);
+
+        // ========================= //
+        // EVENT LISTENERS           //
+        // ========================= //
+        input.addEventListener('input', (e) => {
+            debouncedSearch(e.target.value);
+        });
+
+        clearBtn.addEventListener('click', () => {
+            input.value = '';
+            searchArticles('');
+            input.focus();
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                input.value = '';
+                searchArticles('');
+            }
+        });
+
+        // Preload articles saat user fokus ke input
+        input.addEventListener('focus', () => {
+            fetchAllArticles();
+        });
+
+        // Initial state
+        countEl.textContent = cards.length + CONFIG.resultSuffix;
+
+        console.log('%c✅ Article Search Initialized (Multi-Page Support)', 'color: #007CE6; font-weight: bold; font-size: 14px;');
+        console.log('%c📄 Current page cards:', 'color: #666; font-weight: bold;', cards.length);
+
+    })();
+
+    // ========================= //
+    // MERCHANT PAGE SEARCH      //
+    // + CATEGORY FILTER         //
+    // + PRICE FILTER            //
+    // + NO AUTO-SCROLL FIX      //
+    // ========================= //
+    (function () {
+        'use strict';
+
+        // ========================= //
+        // PRICE RANGES              //
+        // ========================= //
+        const PRICE_RANGES = [
+            { label: 'Semua Harga', min: 0, max: Infinity },
+            { label: '1 - 5 juta', min: 1000000, max: 5000000 },
+            { label: '5 - 10 juta', min: 5000000, max: 10000000 },
+            { label: '10 - 20 juta', min: 10000000, max: 20000000 },
+            { label: '20 - 50 juta', min: 20000000, max: 50000000 },
+            { label: '50 - 100 juta', min: 50000000, max: 100000000 },
+            { label: '100 - 200 juta', min: 100000000, max: 200000000 },
+            { label: '200 - 500 juta', min: 200000000, max: 500000000 },
+            { label: '500 juta - 1 miliar', min: 500000000, max: 1000000000 },
+            { label: '1 - 2 miliar', min: 1000000000, max: 2000000000 },
+            { label: '2 - 5 miliar', min: 2000000000, max: 5000000000 },
+            { label: '5 - 10 miliar', min: 5000000000, max: 10000000000 },
+            { label: '10 miliar ke atas', min: 10000000000, max: Infinity }
+        ];
+
+        // ========================= //
+        // CATEGORY MAPPING          //
+        // ========================= //
+        const CATEGORY_MAP = {
+            'F&B (Makanan & Minuman)': [
+                'Oseng Endog', 'Sambal Bakar', 'Zhengda', 'BingXue', 'CFC', 'Wizzmie',
+                'Pizza Tarik', 'Balkan Shawarma', 'Pempek Farina', 'Nduo Sushi', 'Atme',
+                'Selera Bahari', 'Sekian Kopi', 'Kopi Dari Hati', 'Excelso', 'Fore Coffee',
+                'J Chicken', 'Janji Jiwa', 'Holland Bakery', 'Abu Walad', 'Warteg',
+                'Kanemura', 'Warkop Agam', 'Cooler City', 'Bee Crepes', 'Aladdin Kebab',
+                'Tous Les Jours', 'Tea Break', 'Chi Fry', 'Mixue'
+            ],
+            'Daily Needs & Convenience': ['Alfamart', 'Alfamidi', 'Kimaya Spa', 'Deft Barber'],
+            'Retail & Bookstore': ['Gramedia'],
+            'Pharmacy / Health': ['Apotek', 'Farmaktia'],
+            'Cleaning & Laundry': ['Maxpress', 'Laundry Hari Ini', 'LaundryKlin'],
+            'Automotive': ['Mobil Mint', 'Mobil Bekas', 'Scuto', 'Mega Cemerlang'],
+            'Courier & Services': ['Maxim', 'Mama Rich', 'Nice So'],
+            'Education & Training': ['UCMAS', 'Sempoa', 'Kumon']
+        };
+
+        const CONFIG = {
+            collectionId: '#collection-682ed0cefb029f5874cdba8b',
+            cardSelector: '.list-item',
+            gridSelector: '.user-items-list-item-container',
+            enableRibbon: false,
+            placeholder: 'Cari franchise...',
+            noResultsText: 'Tidak ada franchise yang ditemukan.',
+            itemsPerPage: 12,
+            searchDelay: 300,
+            minSearchLength: 2
+        };
+
+        const collection = document.querySelector(CONFIG.collectionId);
+        if (!collection) {
+            console.warn('⚠️ Merchant collection not found');
+            return;
+        }
+
+        const grid = collection.querySelector(CONFIG.gridSelector);
+        if (!grid) {
+            console.warn('⚠️ Merchant grid not found');
+            return;
+        }
+
+        const cards = Array.from(collection.querySelectorAll(CONFIG.cardSelector));
+        let currentPage = 1;
+        let currentCategory = 'all';
+        let currentPriceRange = PRICE_RANGES[0];
+        let searchData = [];
+
+        // ========================= //
+        // EXTRACT PRICE FROM TEXT   //
+        // ========================= //
+        function extractPrice(text) {
+            if (!text) return 0;
+
+            const cleanText = text.replace(/Harga\s*:\s*/gi, '').trim();
+            const match = cleanText.match(/Rp\s*([\d.]+)/i);
+            if (!match) return 0;
+
+            const numberStr = match[1].replace(/\./g, '');
+            return parseInt(numberStr, 10) || 0;
+        }
+
+        // ========================= //
+        // GET CATEGORY FOR TITLE    //
+        // ========================= //
+        function getCategoryForTitle(title) {
+            if (!title) return 'Other';
+
+            const cleanTitle = title.trim();
+
+            for (const [category, keywords] of Object.entries(CATEGORY_MAP)) {
+                for (const keyword of keywords) {
+                    if (cleanTitle.toLowerCase().includes(keyword.toLowerCase())) {
+                        return category;
+                    }
+                }
+            }
+
+            return 'Other';
+        }
+
+        // ========================= //
+        // CREATE SEARCH UI          //
+        // ========================= //
+        function createSearchUI() {
+            if (collection.querySelector('.mf-search-bar-wrapper')) return;
+
+            const searchWrapper = document.createElement('div');
+            searchWrapper.className = 'mf-search-bar-wrapper';
+            searchWrapper.innerHTML = `
+      <div class="mf-search-container">
+        <form class="mf-search-form" role="search" autocomplete="off">
+          <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input 
+            type="search" 
+            class="mf-search-input" 
+            placeholder="${CONFIG.placeholder}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="mf-search-clear">×</button>
+        </form>
+        <div class="mf-filter-group">
+          <svg class="mf-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <select class="mf-price-filter">
+            ${PRICE_RANGES.map((range, index) => `
+              <option value="${index}">${range.label}</option>
+            `).join('')}
+          </select>
+        </div>
+        <div class="mf-search-meta">
+          <div class="mf-results-count"></div>
+        </div>
+      </div>
+      <div class="mf-no-results">${CONFIG.noResultsText}</div>
+    `;
+
+            grid.parentNode.insertBefore(searchWrapper, grid);
+        }
+
+        // ========================= //
+        // CREATE CATEGORY FILTER    //
+        // ========================= //
+        function createCategoryFilter() {
+            if (collection.querySelector('.mf-category-filter')) return;
+
+            const categoryCounts = { 'all': cards.length };
+
+            cards.forEach(card => {
+                const title = card.querySelector('.list-item-content__title');
+                if (title) {
+                    const category = getCategoryForTitle(title.textContent);
+                    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                }
+            });
+
+            const filterWrapper = document.createElement('div');
+            filterWrapper.className = 'mf-category-filter';
+
+            let html = '<div class="mf-category-buttons">';
+            html += `<button class="mf-category-btn active" data-category="all">All <span class="count">(${categoryCounts['all']})</span></button>`;
+
+            const categoryLabels = {
+                'F&B (Makanan & Minuman)': 'F&B',
+                'Daily Needs & Convenience': 'Daily Needs',
+                'Retail & Bookstore': 'Retail',
+                'Pharmacy / Health': 'Pharmacy',
+                'Cleaning & Laundry': 'Laundry',
+                'Automotive': 'Automotive',
+                'Courier & Services': 'Services',
+                'Education & Training': 'Education'
+            };
+
+            Object.keys(CATEGORY_MAP).forEach(category => {
+                const count = categoryCounts[category] || 0;
+                if (count > 0) {
+                    const label = categoryLabels[category] || category;
+                    html += `<button class="mf-category-btn" data-category="${category}">${label} <span class="count">(${count})</span></button>`;
+                }
+            });
+
+            html += '</div>';
+            filterWrapper.innerHTML = html;
+
+            const searchWrapper = collection.querySelector('.mf-search-bar-wrapper');
+            if (searchWrapper) {
+                searchWrapper.after(filterWrapper);
+            }
+        }
+
+        // ========================= //
+        // FETCH ALL PAGINATION PAGES//
+        // ========================= //
+        async function fetchAllArticles() {
+            if (allArticles.length > 0 || isLoading) return;
+
+            isLoading = true;
+            loadingIndicator.style.display = 'inline';
+
+            // Tambahkan artikel dari halaman saat ini
+            cards.forEach(card => {
+                allArticles.push(extractArticleData(card, 1));
+            });
+
+            console.log('%c📄 Current page articles:', 'color: #666;', cards.length);
+
+            // Cari pagination links - support Squarespace format
+            const paginationContainer = root.querySelector('.blog-list-pagination') ||
+                root.querySelector('.list-pagination') ||
+                root.querySelector('.pagination') ||
+                document.querySelector('.blog-list-pagination') ||
+                document.querySelector('.list-pagination') ||
+                document.querySelector('.pagination');
+
+            const pageUrls = new Set();
+
+            if (paginationContainer) {
+                console.log('%c🔍 Pagination container found', 'color: #10B981;', paginationContainer);
+
+                // Squarespace uses ?offset= format
+                const paginationLinks = paginationContainer.querySelectorAll('a[href*="?offset="], a[href*="&offset="], a[href*="?page="], a[href*="/page/"]');
+
+                paginationLinks.forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href) {
+                        // Convert relative URL to absolute
+                        const fullUrl = href.startsWith('/') ? window.location.origin + href : href;
+                        pageUrls.add(fullUrl);
+                        console.log('%c📎 Found pagination link:', 'color: #6366F1;', fullUrl);
+                    }
+                });
+
+                // If no links found, try to fetch subsequent pages by following "Older Posts" link
+                if (pageUrls.size === 0) {
+                    const olderLink = paginationContainer.querySelector('.older a');
+                    if (olderLink) {
+                        const href = olderLink.getAttribute('href');
+                        if (href) {
+                            const fullUrl = href.startsWith('/') ? window.location.origin + href : href;
+                            pageUrls.add(fullUrl);
+                            console.log('%c📎 Found Older Posts link:', 'color: #6366F1;', fullUrl);
+                        }
+                    }
+                }
+            }
+
+            // Recursively fetch all pages using offset
+            if (pageUrls.size > 0) {
+                await fetchPagesRecursively(pageUrls, 2);
+            } else {
+                console.log('%c⚠️ No pagination found - single page only', 'color: #F59E0B;');
+            }
+        }
+
+        // ========================= //
+        // INJECT CATEGORY BADGES    //
+        // ========================= //
+        function injectCategoryBadges() {
+            cards.forEach(card => {
+                const imgWrap = card.querySelector('.list-item-media');
+                const title = card.querySelector('.list-item-content__title');
+
+                if (imgWrap && title) {
+                    if (!imgWrap.querySelector('.mf-category-badge')) {
+                        const category = getCategoryForTitle(title.textContent);
+                        if (category !== 'Other') {
+                            const badge = document.createElement('div');
+                            badge.className = 'mf-category-badge';
+
+                            const shortLabels = {
+                                'F&B (Makanan & Minuman)': 'F&B',
+                                'Daily Needs & Convenience': 'Daily',
+                                'Retail & Bookstore': 'Retail',
+                                'Pharmacy / Health': 'Health',
+                                'Cleaning & Laundry': 'Laundry',
+                                'Automotive': 'Auto',
+                                'Courier & Services': 'Service',
+                                'Education & Training': 'Edu'
+                            };
+
+                            badge.textContent = shortLabels[category] || category;
+                            badge.setAttribute('data-category', category);
+                            imgWrap.appendChild(badge);
+                        }
+                    }
+                }
+            });
+        }
+
+        // ========================= //
+        // PREPARE SEARCH DATA       //
+        // ========================= //
+        function prepareSearchData() {
+            searchData = cards.map(card => {
+                const title = card.querySelector('.list-item-content__title');
+                const description = card.querySelector('.list-item-content__description');
+                const category = getCategoryForTitle(title?.textContent || '');
+
+                const priceText = description?.textContent || '';
+                const price = extractPrice(priceText);
+
+                return {
+                    card,
+                    title: title?.textContent.trim() || '',
+                    description: priceText.trim(),
+                    category: category,
+                    price: price,
+                    originalTitle: title?.innerHTML || '',
+                    titleElement: title
+                };
+            });
+        }
+
+        // ========================= //
+        // FILTER BY CATEGORY        //
+        // ========================= //
+        function filterByCategory(category) {
+            currentCategory = category;
+            applyFilters();
+
+            collection.querySelectorAll('.mf-category-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.category === category);
+            });
+        }
+
+        // ========================= //
+        // FILTER BY PRICE           //
+        // ========================= //
+        function filterByPrice(rangeIndex) {
+            currentPriceRange = PRICE_RANGES[rangeIndex];
+            applyFilters();
+        }
+
+        // ========================= //
+        // APPLY ALL FILTERS         //
+        // (NO AUTO-SCROLL FIX)      //
+        // ========================= //
+        function applyFilters() {
+            // STORE CURRENT SCROLL POSITION
+            const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+            const searchInput = collection.querySelector('.mf-search-input');
+            const keyword = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+            let visibleCount = 0;
+
+            searchData.forEach(item => {
+                const titleMatch = !keyword || item.title.toLowerCase().includes(keyword);
+                const descMatch = !keyword || item.description.toLowerCase().includes(keyword);
+                const searchMatch = !keyword || titleMatch || descMatch;
+
+                const categoryMatch = currentCategory === 'all' || item.category === currentCategory;
+
+                const priceMatch = item.price >= currentPriceRange.min && item.price <= currentPriceRange.max;
+
+                const isMatch = searchMatch && categoryMatch && priceMatch;
+
+                if (isMatch) {
+                    item.card.classList.remove('is-filtered-out');
+                    visibleCount++;
+
+                    if (item.titleElement && titleMatch && keyword) {
+                        item.titleElement.innerHTML = highlightText(item.originalTitle, keyword);
+                    } else if (item.titleElement) {
+                        item.titleElement.innerHTML = item.originalTitle;
+                    }
+                } else {
+                    item.card.classList.add('is-filtered-out');
+                    if (item.titleElement) {
+                        item.titleElement.innerHTML = item.originalTitle;
+                    }
+                }
+            });
+
+            updateSearchUI(visibleCount, keyword);
+            currentPage = 1;
+
+            // Use requestAnimationFrame to restore scroll after DOM updates
+            requestAnimationFrame(() => {
+                window.scrollTo(0, scrollY);
+                showPage(1);
+            });
+        }
+
+        // ========================= //
+        // HIGHLIGHT TEXT            //
+        // ========================= //
+        function highlightText(text, keyword) {
+            if (!text || !keyword) return text;
+            const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedKeyword})`, 'gi');
+            return text.replace(regex, '<span class="search-highlight">$1</span>');
+        }
+
+        // ========================= //
+        // UPDATE SEARCH UI          //
+        // ========================= //
+        function updateSearchUI(count, query) {
+            const total = cards.length;
+            const resultsCount = collection.querySelector('.mf-results-count');
+            const noResults = collection.querySelector('.mf-no-results');
+            const clearBtn = collection.querySelector('.mf-search-clear');
+
+            if (resultsCount) {
+                let filterText = '';
+                if (currentCategory !== 'all') filterText += ` in ${currentCategory}`;
+                if (currentPriceRange.label !== 'Semua Harga') filterText += ` (${currentPriceRange.label})`;
+
+                resultsCount.textContent = query
+                    ? `${count} dari ${total} franchise${filterText}`
+                    : `${count} franchise${filterText}`;
+            }
+
+            if (clearBtn) {
+                clearBtn.style.display = query ? 'flex' : 'none';
+            }
+
+            if (noResults) {
+                noResults.style.display = (count === 0 && query) ? 'block' : 'none';
+            }
+        }
+
+        // ========================= //
+        // GET VISIBLE CARDS         //
+        // ========================= //
+        function getVisibleCards() {
+            return cards.filter(card => !card.classList.contains('is-filtered-out'));
+        }
+
+        // ========================= //
+        // SHOW PAGE                 //
+        // (NO AUTO-SCROLL)          //
+        // ========================= //
+        function showPage(page) {
+            const visibleCards = getVisibleCards();
+            const totalPages = Math.ceil(visibleCards.length / CONFIG.itemsPerPage);
+
+            if (page < 1) page = 1;
+            if (page > totalPages && totalPages > 0) page = totalPages;
+
+            currentPage = page;
+
+            const start = (page - 1) * CONFIG.itemsPerPage;
+            const end = start + CONFIG.itemsPerPage;
+
+            cards.forEach(card => {
+                card.style.display = 'none';
+            });
+
+            visibleCards.forEach((card, index) => {
+                if (index >= start && index < end) {
+                    card.style.display = '';
+                }
+            });
+
+            renderPagination(visibleCards.length, totalPages);
+
+            // ONLY SCROLL ON PAGINATION CLICK, NOT ON FILTER
+            // Removed auto-scroll from here
+        }
+
+        // ========================= //
+        // RENDER PAGINATION         //
+        // ========================= //
+        function renderPagination(totalItems, totalPages) {
+            let paginationWrapper = collection.querySelector('.mf-pagination');
+
+            if (!paginationWrapper) {
+                paginationWrapper = document.createElement('div');
+                paginationWrapper.className = 'mf-pagination';
+                grid.parentNode.insertBefore(paginationWrapper, grid.nextSibling);
+            }
+
+            if (totalItems === 0 || totalPages <= 1) {
+                paginationWrapper.style.display = 'none';
+                return;
+            }
+
+            paginationWrapper.style.display = 'flex';
+
+            const start = (currentPage - 1) * CONFIG.itemsPerPage + 1;
+            const end = Math.min(currentPage * CONFIG.itemsPerPage, totalItems);
+
+            let html = `<div class="mf-pagination-info">Showing ${start}-${end} of ${totalItems} franchises</div>`;
+
+            html += `<button class="mf-pagination-button ${currentPage === 1 ? 'disabled' : ''}" data-page="${currentPage - 1}">← Prev</button>`;
+
+            const maxButtons = 7;
+            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+            if (endPage - startPage < maxButtons - 1) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+
+            if (startPage > 1) {
+                html += `<button class="mf-pagination-button" data-page="1">1</button>`;
+                if (startPage > 2) {
+                    html += `<span class="mf-pagination-dots">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="mf-pagination-button ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<span class="mf-pagination-dots">...</span>`;
+                }
+                html += `<button class="mf-pagination-button" data-page="${totalPages}">${totalPages}</button>`;
+            }
+
+            html += `<button class="mf-pagination-button ${currentPage === totalPages ? 'disabled' : ''}" data-page="${currentPage + 1}">Next →</button>`;
+
+            paginationWrapper.innerHTML = html;
+
+            paginationWrapper.querySelectorAll('.mf-pagination-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const page = parseInt(e.currentTarget.dataset.page);
+                    if (!isNaN(page) && !e.currentTarget.classList.contains('disabled')) {
+                        showPage(page);
+                        // SCROLL ONLY ON PAGINATION CLICK
+                        if (grid) {
+                            const rect = grid.getBoundingClientRect();
+                            const scrollTop = window.pageYOffset + rect.top - 100;
+                            window.scrollTo({ top: scrollTop, behavior: 'smooth' });
+                        }
+                    }
+                });
+            });
+        }
+
+        // ========================= //
+        // DEBOUNCE                  //
+        // ========================= //
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func(...args), wait);
+            };
+        }
+
+        // ========================= //
+        // ATTACH EVENTS             //
+        // ========================= //
+        function attachEvents() {
+            const input = collection.querySelector('.mf-search-input');
+            const clearBtn = collection.querySelector('.mf-search-clear');
+            const form = collection.querySelector('.mf-search-form');
+            const priceFilter = collection.querySelector('.mf-price-filter');
+
+            if (!input) return;
+
+            const debouncedSearch = debounce(() => {
+                applyFilters();
+            }, CONFIG.searchDelay);
+
+            input.addEventListener('input', () => {
+                debouncedSearch();
+            });
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    input.value = '';
+                    applyFilters();
+                    input.focus();
+                });
+            }
+
+            if (form) {
+                form.addEventListener('submit', (e) => e.preventDefault());
+            }
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    input.value = '';
+                    applyFilters();
+                }
+            });
+
+            collection.querySelectorAll('.mf-category-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const category = e.currentTarget.dataset.category;
+                    filterByCategory(category);
+                    if (input) input.value = '';
+                });
+            });
+
+            if (priceFilter) {
+                priceFilter.addEventListener('change', (e) => {
+                    const rangeIndex = parseInt(e.target.value);
+                    filterByPrice(rangeIndex);
+                });
+            }
+        }
+
+        // ========================= //
+        // FIX WHATSAPP LINKS        //
+        // ========================= //
+        function fixWhatsAppLinks() {
+            const links = collection.querySelectorAll('a[href*="wa.me"], a[href*="whatsapp"]');
+
+            let fixedCount = 0;
+
+            links.forEach(link => {
+                const href = link.getAttribute('href');
+                if (!href) return;
+
+                const isMalformed =
+                    href.includes('startfranchise.id/wa.me') ||
+                    href.startsWith('/wa.me/') ||
+                    (!href.startsWith('http') && href.includes('wa.me'));
+
+                if (isMalformed) {
+                    const phoneMatch = href.match(/(\d{10,15})/);
+                    if (phoneMatch) {
+                        const phone = phoneMatch[1];
+                        const fixedUrl = `https://wa.me/${phone}`;
+                        link.setAttribute('href', fixedUrl);
+                        link.setAttribute('target', '_blank');
+                        link.setAttribute('rel', 'noopener noreferrer');
+                        fixedCount++;
+                    }
+                }
+            });
+
+            if (fixedCount > 0) {
+                console.log(`%c✅ ${fixedCount} WhatsApp link(s) fixed`, 'color: #10B981;');
+            }
+        }
+
+        // ========================= //
+        // KEYBOARD SHORTCUTS        //
+        // ========================= //
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const input = collection.querySelector('.mf-search-input');
+                if (input && input.offsetParent !== null) {
+                    input.focus();
+                }
+            }
+        });
+
+        // ========================= //
+        // INITIALIZE                //
+        // ========================= //
+        function init() {
+            createSearchUI();
+            createCategoryFilter();
+            injectCategoryBadges();
+            prepareSearchData();
+            attachEvents();
+            applyFilters();
+
+            console.log('%c✅ Merchant Search Initialized (No Auto-Scroll)', 'color: #007CE6; font-weight: bold; font-size: 14px;');
+            console.log('%c📦 Categories:', 'color: #10B981; font-weight: bold;', Object.keys(CATEGORY_MAP).length);
+            console.log('%c💰 Price Ranges:', 'color: #10B981; font-weight: bold;', PRICE_RANGES.length);
+            console.log('%c📊 Total Franchises:', 'color: #666; font-weight: bold;', cards.length);
+        }
+
+        init();
+        fixWhatsAppLinks();
+
+    })();
+
+    /* ============================================= */
+    /* END OF UNIFIED SEARCH v11.0 FINAL            */
+    /* ============================================= */
+</script>
+
+<!-- CSS for Article Search Multi-Page Pagination -->
+<style>
+    /* ============================================= */
+    /* ARTICLE SEARCH MULTI-PAGE PAGINATION CSS     */
+    /* ============================================= */
+
+    /* Loading Indicator */
+    .sf-loading-indicator {
+        color: #6b7280;
+        font-size: 13px;
+        margin-left: 8px;
+    }
+
+    /* Search Results Container */
+    .sf-search-results-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 24px;
+        padding: 20px 0;
+    }
+
+    .sf-search-results-container.blog-basic-grid {
+        display: grid !important;
+    }
+
+    /* Search Result Card */
+    .sf-search-result-card {
+        background: #fff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+    }
+
+    .sf-search-result-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .sf-search-result-card .blog-basic-grid--content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sf-search-result-card .blog-basic-grid--image {
+        width: 100%;
+        aspect-ratio: 16/9;
+        overflow: hidden;
+    }
+
+    .sf-search-result-card .blog-basic-grid--image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+
+    .sf-search-result-card:hover .blog-basic-grid--image img {
+        transform: scale(1.05);
+    }
+
+    .sf-search-result-card .blog-basic-grid--text {
+        padding: 16px;
+    }
+
+    .sf-search-result-card .blog-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0 0 8px 0;
+        line-height: 1.4;
+    }
+
+    .sf-search-result-card .blog-title a {
+        color: #1f2937;
+        text-decoration: none;
+    }
+
+    .sf-search-result-card .blog-title a:hover {
+        color: #2563eb;
+    }
+
+    .sf-search-result-card .blog-date,
+    .sf-search-result-card .blog-author {
+        font-size: 13px;
+        color: #6b7280;
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .sf-search-result-card .blog-excerpt {
+        font-size: 14px;
+        color: #4b5563;
+        line-height: 1.5;
+        margin: 8px 0 0 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Highlight */
+    .sf-highlight,
+    mark.sf-highlight {
+        background: linear-gradient(120deg, #fef08a 0%, #fde047 100%);
+        padding: 2px 4px;
+        border-radius: 3px;
+        color: inherit;
+    }
+
+    /* Search Pagination */
+    .sf-search-pagination {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 24px 0;
+        margin-top: 20px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .sf-pagination-info {
+        width: 100%;
+        text-align: center;
+        font-size: 14px;
+        color: #6b7280;
+        margin-bottom: 12px;
+    }
+
+    .sf-pagination-btn {
+        padding: 8px 16px;
+        background: #fff;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .sf-pagination-btn:hover:not(.disabled) {
+        background: #f3f4f6;
+        border-color: #9ca3af;
+    }
+
+    .sf-pagination-btn.active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+    }
+
+    .sf-pagination-btn.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .sf-pagination-dots {
+        color: #9ca3af;
+        font-size: 14px;
+        padding: 0 4px;
+    }
+
+    /* No Results */
+    .sf-no-results {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6b7280;
+        font-size: 16px;
+        background: #f9fafb;
+        border-radius: 12px;
+        margin: 20px 0;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sf-search-results-container {
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .sf-pagination-btn {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .sf-search-results-container {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<script async type="application/javascript" src="https://news.google.com/swg/js/v1/swg-basic.js"></script>
+<script>
+    (self.SWG_BASIC = self.SWG_BASIC || []).push(basicSubscriptions => {
+        basicSubscriptions.init({
+            type: "NewsArticle",
+            isPartOfType: ["Product"],
+            isPartOfProductId: "CAow-MHCDA:openaccess",
+            clientOptions: { theme: "light", lang: "id" },
+        });
+    });
+</script>
+
+
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Cek ID halaman body
+        if (!document.getElementById("collection-691eba58762c2c3448d15e97")) return;
+
+        // --- 1. DATA KONTEN ---
+
+        // Tombol Close (X) agar user tau cara menutupnya
+        const closeBtn = '<div class="close-card-btn">&times;</div>';
+
+        const contentCard1 = `
+        <div class="click-content-overlay">
+            ${closeBtn}
+            <h5>Membership Program</h5>
+            <p class="intro-text">Program pendampingan 12 bulan membangun sistem franchise.</p>
+            <ul>
+                <li><strong>Weekly Live Coaching</strong> bahas manajemen & strategi.</li>
+                <li><strong>Aplikasi Learning Hub</strong> modul lengkap.</li>
+                <li><strong>Komunitas Networking</strong> sesama owner.</li>
+                <li><strong>BONUS:</strong> Free Start Franchise Book.</li>
+                <li><strong>BONUS:</strong> Free Summit Pass.</li>
+            </ul>
+        </div>
+    `;
+
+        const contentCard2 = `
+        <div class="click-content-overlay">
+            ${closeBtn}
+            <h5>Start Franchise Book</h5>
+            <p class="intro-text">Blueprint komprehensif formula ekspansi franchise.</p>
+            <ul>
+                <li><strong>Franchise Blueprint Book</strong> (Nol ke Ribuan cabang).</li>
+                <li><strong>Panduan SOP</strong>, Legal, Branding, Finance.</li>
+                <li><strong>Franchise 101:</strong> Persiapan investasi.</li>
+            </ul>
+        </div>
+    `;
+
+        const contentCard3 = `
+        <div class="click-content-overlay">
+            ${closeBtn}
+            <h5>Franchise Impact Summit</h5>
+            <p class="intro-text">Event tahunan bisnis, kreator, sponsor & media.</p>
+            <ul>
+                <li>Pembicara Nasional & Internasional.</li>
+                <li>Exposure Media & Branding.</li>
+                <li>Peluang Sponsor & Kerjasama.</li>
+            </ul>
+            <p class="footer-text">Potensi onboarding member besar.</p>
+        </div>
+    `;
+
+        // --- 2. FUNGSI UTAMA ---
+
+        function setupCardInteraction(shapeId, contentHTML) {
+            const shapeBlock = document.querySelector(shapeId);
+
+            if (shapeBlock) {
+                // A. Inject HTML
+                const container = shapeBlock.querySelector('.sqs-shape-block-container');
+                const wrapper = document.createElement('div');
+                wrapper.className = 'card-details-wrapper';
+                wrapper.innerHTML = contentHTML;
+                container.appendChild(wrapper);
+
+                // B. Tambahkan Event Listener 'CLICK'
+                shapeBlock.addEventListener('click', function (e) {
+                    // Toggle class 'active-card' pada block ini
+                    this.classList.toggle('active-card');
+                });
+            }
+        }
+
+        // Terapkan ke 3 Kartu
+        setupCardInteraction('#block-yui_3_17_2_1_1763629383578_3338', contentCard1);
+        setupCardInteraction('#block-f1b68129b146fb2157f7', contentCard2);
+        setupCardInteraction('#block-620bd9c3d4bab6f8070a', contentCard3);
+    });
+</script>
+
+<style>
+    /* CSS Scope hanya untuk halaman ini */
+    #collection-691eba58762c2c3448d15e97 {
+
+        /* 1. SETUP TAMPILAN OVERLAY (Awalnya Sembunyi) */
+        .card-details-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ffffff;
+            /* Background Putih Polos agar bersih */
+            opacity: 0;
+            pointer-events: none;
+            /* Agar tidak menghalangi klik saat sembunyi */
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            transform: scale(0.95);
+            /* Efek sedikit zoom saat muncul */
+            z-index: 50;
+            padding: 25px 20px;
+            box-sizing: border-box;
+            border-radius: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            text-align: left;
+            border: 2px solid #ddd;
+            /* Tambah border tipis */
+        }
+
+        /* Tombol Close (X) di pojok kanan atas */
+        .close-card-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        /* 2. STATE AKTIF (SAAT DI-KLIK) */
+        /* Kelas ini ditambahkan oleh Javascript saat diklik */
+        .sqs-block-shape.active-card .card-details-wrapper {
+            opacity: 1;
+            pointer-events: auto;
+            /* Aktifkan interaksi di dalam detail */
+            transform: scale(1);
+        }
+
+        .sqs-block-shape.active-card {
+            z-index: 9999 !important;
+            /* Angkat ke layer paling atas */
+        }
+
+        /* 3. INDIKATOR KLIK */
+        .sqs-block-shape {
+            cursor: pointer;
+            /* Ubah kursor jadi tangan */
+        }
+
+        /* 4. PASS-THROUGH KLIK (PENTING) */
+        /* Kita mematikan klik pada elemen Gambar, Judul, & Tombol Asli 
+       supaya klik user "tembus" ke Shape Block di belakangnya */
+
+        /* Card 1 Elements */
+        #block-yui_3_17_2_1_1763629378042_4212,
+        #block-yui_3_17_2_1_1763629378042_3737,
+        #block-yui_3_17_2_1_1763629378042_4701,
+        #block-yui_3_17_2_1_1764214660659_3215,
+        #block-yui_3_17_2_1_1763632548404_9690,
+
+        /* Card 2 Elements */
+        #block-bb15f13c8b9e97351fb2,
+        #block-66f113c875326c37abf1,
+        #block-f8f69c93ae0d160a8c7e,
+        #block-0958e1fd7b99e4836c9d,
+        #block-c695ce4c4db060e6fe35,
+
+        /* Card 3 Elements */
+        #block-b0df189552130a72d520,
+        #block-1acf1d5724d2b593606f,
+        #block-e0152e660b888b2c3462,
+        #block-2148f21ade48fa140a3e,
+        #block-4a2be2ac70d22500393e,
+        #block-ff742081d2eda1abfca0 {
+            pointer-events: none;
+        }
+
+        /* 5. TYPOGRAPHY DETAIL */
+        .click-content-overlay h5 {
+            font-size: 15px;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            color: #000;
+            padding-right: 15px;
+            /* Space biar gak nabrak tombol close */
+        }
+
+        .click-content-overlay .intro-text {
+            font-size: 12px;
+            margin-bottom: 10px;
+            line-height: 1.3em;
+            font-style: italic;
+            color: #555;
+        }
+
+        .click-content-overlay ul {
+            padding-left: 18px;
+            margin: 0;
+            list-style-type: disc;
+        }
+
+        .click-content-overlay li {
+            font-size: 11px;
+            line-height: 1.4em;
+            margin-bottom: 5px;
+            color: #222;
+        }
+
+        .click-content-overlay .footer-text {
+            font-size: 11px;
+            margin-top: 8px;
+            font-weight: 600;
+            color: #000;
+        }
+    }
+</style>
+
+
+
+
+
+
+<style>
+    .audio-article-player {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        border: 1px solid #e0e0e0;
+        border-radius: 100px;
+        background: #f8f9fa;
+        font-size: 14px;
+        margin-bottom: 24px;
+        width: fit-content;
+        max-width: 100%;
+        font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        margin-left: auto;
+        margin-right: 0;
+    }
+
+    .audio-article-player .play-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: 2px solid #5f6368;
+        border-radius: 50%;
+        background: transparent;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+        padding: 0;
+    }
+
+    .audio-article-player .play-btn:hover {
+        background: rgba(95, 99, 104, 0.08);
+    }
+
+    .audio-article-player .play-btn svg {
+        width: 16px;
+        height: 16px;
+        fill: #5f6368;
+        margin-left: 2px;
+    }
+
+    .audio-article-player .play-btn.playing svg {
+        margin-left: 0;
+    }
+
+    .audio-article-player .time-current {
+        color: #202124;
+        font-size: 14px;
+        font-weight: 400;
+        min-width: 36px;
+    }
+
+    .audio-article-player .waveform {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 24px;
+        flex-grow: 1;
+        min-width: 80px;
+        max-width: 400px;
+    }
+
+    .audio-article-player .waveform .bar {
+        width: 2px;
+        background: #dadce0;
+        border-radius: 2px;
+        transition: background 0.2s ease;
+    }
+
+    .audio-article-player .waveform .bar.active {
+        background: #5f6368;
+    }
+
+    .audio-article-player .time-remaining {
+        color: #5f6368;
+        font-size: 14px;
+        font-weight: 400;
+        min-width: 45px;
+        text-align: right;
+    }
+
+    .audio-article-player .settings-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        flex-shrink: 0;
+        padding: 0;
+    }
+
+    .audio-article-player .settings-btn:hover {
+        background: rgba(95, 99, 104, 0.08);
+    }
+
+    .audio-article-player .settings-btn svg {
+        width: 20px;
+        height: 20px;
+        fill: #5f6368;
+    }
+
+    .settings-wrapper {
+        position: relative;
+    }
+
+    .audio-article-player .speed-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        padding: 8px 0;
+        display: none;
+        min-width: 100px;
+        margin-top: 8px;
+        z-index: 9999;
+    }
+
+    .audio-article-player .speed-menu.show {
+        display: block;
+    }
+
+    .audio-article-player .speed-menu button {
+        display: block;
+        width: 100%;
+        padding: 8px 16px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        color: #202124;
+    }
+
+    .audio-article-player .speed-menu button:hover {
+        background: #f1f3f4;
+    }
+
+    .audio-article-player .speed-menu button.selected {
+        color: #1a73e8;
+        font-weight: 500;
+    }
+
+    /* Language indicator */
+    .audio-article-player .lang-indicator {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: rgba(95, 99, 104, 0.1);
+        border-radius: 12px;
+        font-size: 11px;
+        color: #5f6368;
+        text-transform: uppercase;
+        font-weight: 500;
+        flex-shrink: 0;
+    }
+
+    /* ========== RESPONSIVE MOBILE ========== */
+    @media (max-width: 768px) {
+        .audio-article-player {
+            width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+            padding: 10px 16px;
+            gap: 8px;
+            border-radius: 16px;
+            box-sizing: border-box;
+        }
+
+        .audio-article-player .play-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .audio-article-player .play-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .audio-article-player .time-current,
+        .audio-article-player .time-remaining {
+            font-size: 12px;
+            min-width: 32px;
+        }
+
+        .audio-article-player .waveform {
+            min-width: 60px;
+            gap: 1.5px;
+        }
+
+        .audio-article-player .waveform .bar {
+            width: 1.5px;
+        }
+
+        .audio-article-player .settings-btn {
+            width: 28px;
+            height: 28px;
+        }
+
+        .audio-article-player .settings-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .audio-article-player .lang-indicator {
+            display: none;
+            /* Hide on mobile to save space */
+        }
+
+        .audio-article-player .speed-menu {
+            right: -10px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .audio-article-player {
+            padding: 8px 12px;
+            gap: 6px;
+            border-radius: 12px;
+        }
+
+        .audio-article-player .play-btn {
+            width: 30px;
+            height: 30px;
+            border-width: 1.5px;
+        }
+
+        .audio-article-player .time-current {
+            min-width: 28px;
+            font-size: 11px;
+        }
+
+        .audio-article-player .time-remaining {
+            min-width: 36px;
+            font-size: 11px;
+        }
+
+        .audio-article-player .waveform {
+            min-width: 50px;
+            height: 20px;
+        }
+    }
+</style>
+
+<script>
+    (function () {
+
+        function isArticleDetail() {
+            return location.pathname.startsWith("/article/") &&
+                location.pathname.split("/").length > 2;
+        }
+
+        function getArticleText() {
+            const article = document.querySelector("article");
+            if (!article) return "";
+            return article.innerText.replace(/\s+/g, " ").trim();
+        }
+
+        // === LANGUAGE DETECTION ===
+        function detectLanguage(text) {
+            const indonesianWords = [
+                'dan', 'yang', 'di', 'ini', 'itu', 'dengan', 'untuk', 'pada', 'adalah', 'dari',
+                'dalam', 'ke', 'tidak', 'ada', 'juga', 'akan', 'atau', 'bisa', 'sudah', 'lebih',
+                'kami', 'kita', 'saya', 'mereka', 'anda', 'sangat', 'hanya', 'dapat', 'sebagai',
+                'telah', 'oleh', 'jika', 'karena', 'tersebut', 'banyak', 'bagaimana', 'antara',
+                'setelah', 'seperti', 'menjadi', 'tahun', 'saat', 'waktu', 'bisnis', 'franchise'
+            ];
+
+            const englishWords = [
+                'the', 'and', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have',
+                'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may',
+                'might', 'must', 'shall', 'can', 'need', 'that', 'which', 'who', 'whom', 'this',
+                'these', 'those', 'what', 'where', 'when', 'why', 'how', 'all', 'each', 'every',
+                'both', 'few', 'more', 'most', 'other', 'some', 'such', 'only', 'own', 'same',
+                'than', 'too', 'very', 'just', 'but', 'also', 'back', 'after', 'before', 'business'
+            ];
+
+            const words = text.toLowerCase().split(/\s+/);
+            let idScore = 0;
+            let enScore = 0;
+
+            words.forEach(word => {
+                const cleanWord = word.replace(/[^a-z]/g, '');
+                if (indonesianWords.includes(cleanWord)) idScore++;
+                if (englishWords.includes(cleanWord)) enScore++;
+            });
+
+            // Return language code for SpeechSynthesis
+            if (idScore > enScore) {
+                return { code: 'id-ID', name: 'ID' };
+            } else {
+                return { code: 'en-US', name: 'EN' };
+            }
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function generateWaveform(count) {
+            const bars = [];
+            for (let i = 0; i < count; i++) {
+                const height = Math.random() * 16 + 4;
+                bars.push(`<div class="bar" style="height: ${height}px;" data-index="${i}"></div>`);
+            }
+            return bars.join('');
+        }
+
+        // Responsive bar count based on screen width
+        function getBarCount() {
+            const width = window.innerWidth;
+            if (width <= 480) return 30;
+            if (width <= 768) return 45;
+            return 60;
+        }
+
+        function createPlayer() {
+            if (!isArticleDetail()) return;
+            if (document.querySelector(".audio-article-player")) return;
+
+            const title = document.querySelector("h1");
+            if (!title) return;
+
+            const text = getArticleText();
+            if (text.length < 200) return;
+
+            const words = text.split(" ").length;
+            const totalSeconds = Math.ceil(words / 2.5);
+            const barCount = getBarCount();
+
+            // Detect language
+            const detectedLang = detectLanguage(text);
+
+            // === UI ===
+            const wrapper = document.createElement("div");
+            wrapper.className = "audio-article-player";
+
+            wrapper.innerHTML = `
+      <button class="play-btn" aria-label="Play">
+        <svg viewBox="0 0 24 24" class="play-icon">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" class="pause-icon" style="display:none;">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+      </button>
+      <span class="time-current">0:00</span>
+      <div class="waveform">${generateWaveform(barCount)}</div>
+      <span class="time-remaining">-${formatTime(totalSeconds)}</span>
+      <div class="lang-indicator">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
+        </svg>
+        ${detectedLang.name}
+      </div>
+      <div class="settings-wrapper">
+        <button class="settings-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24">
+            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.44.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </button>
+        <div class="speed-menu">
+          <button data-speed="0.5">0.5x</button>
+          <button data-speed="0.75">0.75x</button>
+          <button data-speed="1" class="selected">1x</button>
+          <button data-speed="1.25">1.25x</button>
+          <button data-speed="1.5">1.5x</button>
+          <button data-speed="2">2x</button>
+        </div>
+      </div>
+    `;
+
+            title.parentNode.insertBefore(wrapper, title);
+
+            // === Elements ===
+            const playBtn = wrapper.querySelector(".play-btn");
+            const playIcon = wrapper.querySelector(".play-icon");
+            const pauseIcon = wrapper.querySelector(".pause-icon");
+            const timeCurrent = wrapper.querySelector(".time-current");
+            const timeRemaining = wrapper.querySelector(".time-remaining");
+            const waveform = wrapper.querySelector(".waveform");
+            const bars = wrapper.querySelectorAll(".bar");
+            const settingsBtn = wrapper.querySelector(".settings-btn");
+            const speedMenu = wrapper.querySelector(".speed-menu");
+            const speedBtns = wrapper.querySelectorAll(".speed-menu button");
+
+            // === TTS Logic with Language Detection ===
+            let utterance = null;
+            let isPlaying = false;
+            let currentTime = 0;
+            let progressInterval = null;
+            let currentRate = 1;
+
+            function updateProgress() {
+                if (!isPlaying) return;
+                currentTime += 0.1 * currentRate;
+
+                const progress = Math.min(currentTime / totalSeconds, 1);
+                const activeBarCount = Math.floor(progress * bars.length);
+
+                bars.forEach((bar, i) => {
+                    bar.classList.toggle("active", i < activeBarCount);
+                });
+
+                timeCurrent.textContent = formatTime(currentTime);
+                timeRemaining.textContent = `-${formatTime(Math.max(0, totalSeconds - currentTime))}`;
+
+                if (currentTime >= totalSeconds) {
+                    stopPlayback();
+                }
+            }
+
+            function stopPlayback() {
+                window.speechSynthesis.cancel();
+                clearInterval(progressInterval);
+                isPlaying = false;
+                playIcon.style.display = "block";
+                pauseIcon.style.display = "none";
+            }
+
+            playBtn.addEventListener("click", () => {
+                if (!isPlaying) {
+                    window.speechSynthesis.cancel();
+
+                    utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = detectedLang.code; // Use detected language
+                    utterance.rate = currentRate;
+                    utterance.pitch = 1;
+
+                    utterance.onend = () => {
+                        stopPlayback();
+                    };
+
+                    window.speechSynthesis.speak(utterance);
+                    isPlaying = true;
+                    playIcon.style.display = "none";
+                    pauseIcon.style.display = "block";
+
+                    progressInterval = setInterval(updateProgress, 100);
+                } else {
+                    stopPlayback();
+                }
+            });
+
+            // Settings menu
+            settingsBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                speedMenu.classList.toggle("show");
+            });
+
+            speedBtns.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    currentRate = parseFloat(btn.dataset.speed);
+                    speedBtns.forEach(b => b.classList.remove("selected"));
+                    btn.classList.add("selected");
+                    speedMenu.classList.remove("show");
+
+                    if (isPlaying && utterance) {
+                        window.speechSynthesis.cancel();
+                        utterance = new SpeechSynthesisUtterance(text);
+                        utterance.lang = detectedLang.code;
+                        utterance.rate = currentRate;
+                        utterance.onend = () => stopPlayback();
+                        window.speechSynthesis.speak(utterance);
+                    }
+                });
+            });
+
+            document.addEventListener("click", () => {
+                speedMenu.classList.remove("show");
+            });
+
+            // Handle resize for waveform
+            let resizeTimeout;
+            window.addEventListener("resize", () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    const newBarCount = getBarCount();
+                    if (bars.length !== newBarCount) {
+                        waveform.innerHTML = generateWaveform(newBarCount);
+                    }
+                }, 250);
+            });
+        }
+
+        // === Squarespace AJAX Fix ===
+        const observer = new MutationObserver(createPlayer);
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        createPlayer();
+
+    })();
+</script>
+
+
+
+
+
+
+
+<!-- Custom Navbar Styling for Startfranchise - IMPROVED SUBMENU HITBOX -->
+<style>
+    /* ============================================
+     NAVBAR - GLOBAL STYLES
+     ============================================ */
+
+    /* Header Container */
+    header#header {
+        background: #ffffff !important;
+        transition: all 0.3s ease !important;
+    }
+
+    header#header.header--menu-open {
+        background: #ffffff !important;
+    }
+
+    /* Header Inner */
+    .header-inner {
+        padding: 6px 40px !important;
+        max-width: 1400px !important;
+        margin: 0 auto !important;
+    }
+
+    /* Logo Styling */
+    .header-title-logo img {
+        max-height: 36px !important;
+        width: auto !important;
+        transition: transform 0.3s ease !important;
+    }
+
+    .header-title-logo:hover img {
+        transform: scale(1.02) !important;
+    }
+
+    /* ============================================
+     DESKTOP NAVIGATION - IMPROVED HITBOX
+     ============================================ */
+
+    /* Nav Wrapper - tambah padding untuk hitbox */
+    .header-nav-wrapper {
+        padding: 4px 0 !important;
+    }
+
+    .header-nav-list {
+        display: flex !important;
+        align-items: center !important;
+        gap: 0 !important;
+    }
+
+    /* Nav Item Container - LARGER HITBOX */
+    .header-nav-item {
+        position: relative !important;
+        padding: 0 !important;
+    }
+
+    /* Nav Items & Folder Titles */
+    .header-nav-item>a,
+    .header-nav-folder-title {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        color: #1a1a2e !important;
+        letter-spacing: 0.3px !important;
+        padding: 10px 16px !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease !important;
+        background: transparent !important;
+        border: none !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        white-space: nowrap !important;
+    }
+
+    .header-nav-item>a:hover,
+    .header-nav-folder-title:hover {
+        color: #099dff !important;
+        background: rgba(9, 157, 255, 0.08) !important;
+    }
+
+    /* Dropdown Icon */
+    .header-dropdown-icon {
+        transition: transform 0.3s ease !important;
+        display: inline-flex !important;
+    }
+
+    .header-nav-folder-title[aria-expanded="true"] .header-dropdown-icon {
+        transform: rotate(180deg) !important;
+    }
+
+    /* ============================================
+     DROPDOWN MENU - IMPROVED ACCESSIBILITY
+     ============================================ */
+
+    /* Folder Item Container - EXTENDED HOVER AREA */
+    .header-nav-item--folder {
+        position: relative !important;
+    }
+
+    /* Invisible bridge to prevent hover gap */
+    .header-nav-item--folder::after {
+        content: '' !important;
+        position: absolute !important;
+        top: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+        height: 20px !important;
+        background: transparent !important;
+    }
+
+    /* Dropdown Menu */
+    .header-nav-folder-content {
+        position: absolute !important;
+        top: calc(100% + 10px) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        background: #ffffff !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.15) !important;
+        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        padding: 12px 0 !important;
+        min-width: 220px !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transition: all 0.25s ease !important;
+        z-index: 9999 !important;
+    }
+
+    /* Extended hover bridge INSIDE dropdown */
+    .header-nav-folder-content::before {
+        content: '' !important;
+        position: absolute !important;
+        top: -20px !important;
+        left: 0 !important;
+        right: 0 !important;
+        height: 20px !important;
+        background: transparent !important;
+    }
+
+    /* Show dropdown on hover OR focus */
+    .header-nav-item--folder:hover .header-nav-folder-content,
+    .header-nav-item--folder:focus-within .header-nav-folder-content,
+    .header-nav-folder-title[aria-expanded="true"]+.header-nav-folder-content {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        top: calc(100% + 5px) !important;
+    }
+
+    /* Dropdown Items */
+    .header-nav-folder-item {
+        margin: 0 !important;
+    }
+
+    .header-nav-folder-item a {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: #333 !important;
+        padding: 14px 24px !important;
+        display: block !important;
+        transition: all 0.2s ease !important;
+        white-space: nowrap !important;
+    }
+
+    .header-nav-folder-item a:hover {
+        color: #099dff !important;
+        background: rgba(9, 157, 255, 0.06) !important;
+        padding-left: 28px !important;
+    }
+
+    /* Dropdown indicator arrow */
+    .header-nav-folder-content::after {
+        content: '' !important;
+        position: absolute !important;
+        top: -8px !important;
+        left: 50% !important;
+        transform: translateX(-50%) rotate(45deg) !important;
+        width: 16px !important;
+        height: 16px !important;
+        background: #ffffff !important;
+        border-left: 1px solid rgba(0, 0, 0, 0.06) !important;
+        border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+        z-index: -1 !important;
+    }
+
+    /* ============================================
+     CTA BUTTON
+     ============================================ */
+
+    .header-actions-action--cta a {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #099dff 0%, #0077cc 100%) !important;
+        color: #ffffff !important;
+        padding: 12px 28px !important;
+        border-radius: 50px !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(9, 157, 255, 0.35) !important;
+        transition: all 0.3s ease !important;
+        text-transform: none !important;
+        letter-spacing: 0.3px !important;
+    }
+
+    .header-actions-action--cta a:hover {
+        background: linear-gradient(135deg, #b2de25 0%, #8fbf1a 100%) !important;
+        box-shadow: 0 6px 20px rgba(178, 222, 37, 0.4) !important;
+        transform: translateY(-2px) !important;
+        color: #1a1a2e !important;
+    }
+
+    /* ============================================
+     LANGUAGE PICKER
+     ============================================ */
+
+    .language-picker {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        padding: 12px 16px !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease !important;
+        margin-right: 12px !important;
+        cursor: pointer !important;
+    }
+
+    .language-picker:hover {
+        background: rgba(9, 157, 255, 0.08) !important;
+    }
+
+    .language-picker .current-language {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+
+    .language-picker-content {
+        position: absolute !important;
+        top: calc(100% + 10px) !important;
+        right: 0 !important;
+        background: #ffffff !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.15) !important;
+        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        padding: 8px 0 !important;
+        min-width: 180px !important;
+        z-index: 9999 !important;
+    }
+
+    .language-item a,
+    .language-picker-content .header-menu-nav-item a {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 14px !important;
+        padding: 12px 20px !important;
+        display: block !important;
+        transition: all 0.2s ease !important;
+        color: #333 !important;
+    }
+
+    .language-item a:hover,
+    .language-picker-content .header-menu-nav-item a:hover {
+        background: rgba(9, 157, 255, 0.06) !important;
+        color: #099dff !important;
+    }
+
+    /* ============================================
+     HEADER SCROLL EFFECT
+     ============================================ */
+
+    header#header.scrolled {
+        background: rgba(255, 255, 255, 0.98) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    header#header.scrolled .header-inner {
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+    }
+
+    header#header.scrolled .header-title-logo img {
+        max-height: 42px !important;
+    }
+
+    /* Hide default border and shadow */
+    .header-border,
+    .header-dropshadow {
+        display: none !important;
+    }
+
+    /* ============================================
+     MOBILE NAVIGATION
+     ============================================ */
+
+    /* Hamburger Menu Button */
+    .header-burger {
+        z-index: 9999 !important;
+    }
+
+    .burger-inner {
+        width: 26px !important;
+    }
+
+    .top-bun,
+    .patty,
+    .bottom-bun {
+        background-color: #1a1a2e !important;
+        height: 2px !important;
+        border-radius: 2px !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .header--menu-open .top-bun {
+        transform: rotate(45deg) translateY(7px) !important;
+        background-color: #099dff !important;
+    }
+
+    .header--menu-open .patty {
+        opacity: 0 !important;
+    }
+
+    .header--menu-open .bottom-bun {
+        transform: rotate(-45deg) translateY(-7px) !important;
+        background-color: #099dff !important;
+    }
+
+    /* Mobile Menu Overlay */
+    .header-menu {
+        background: #ffffff !important;
+        padding-top: 80px !important;
+    }
+
+    .header-menu-bg {
+        background: #ffffff !important;
+    }
+
+    /* Mobile Menu Items - LARGER TAP TARGETS */
+    .header-menu-nav-item {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+    }
+
+    .header-menu-nav-item a,
+    .header-menu-nav-item>a {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #1a1a2e !important;
+        padding: 18px 24px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        min-height: 56px !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .header-menu-nav-item a:hover,
+    .header-menu-nav-item a:active {
+        color: #099dff !important;
+        background: rgba(9, 157, 255, 0.06) !important;
+    }
+
+    /* Mobile Folder Arrow */
+    .header-menu-nav-item-content-folder {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        width: 100% !important;
+    }
+
+    .header-menu-nav-item-content-folder .header-dropdown-icon {
+        transform: rotate(-90deg) !important;
+    }
+
+    /* Mobile Back Button */
+    .header-menu-controls-control {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        color: #099dff !important;
+        padding: 18px 24px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        border-bottom: 1px solid rgba(9, 157, 255, 0.15) !important;
+        background: rgba(9, 157, 255, 0.04) !important;
+        min-height: 56px !important;
+    }
+
+    .header-menu-controls-control .header-dropdown-icon {
+        transform: rotate(90deg) !important;
+    }
+
+    /* Mobile Sub-menu Items */
+    .header-menu-nav-folder:not([data-folder="root"]) .header-menu-nav-item a {
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        padding-left: 32px !important;
+    }
+
+    /* Mobile CTA Button */
+    .header-menu-cta {
+        padding: 24px !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        background: linear-gradient(180deg, transparent 0%, #ffffff 30%, #ffffff 100%) !important;
+        padding-top: 50px !important;
+        z-index: 100 !important;
+    }
+
+    .header-menu-cta a {
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #099dff 0%, #0077cc 100%) !important;
+        color: #ffffff !important;
+        padding: 16px 32px !important;
+        border-radius: 50px !important;
+        display: block !important;
+        text-align: center !important;
+        box-shadow: 0 6px 25px rgba(9, 157, 255, 0.35) !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .header-menu-cta a:hover,
+    .header-menu-cta a:active {
+        background: linear-gradient(135deg, #b2de25 0%, #8fbf1a 100%) !important;
+        color: #1a1a2e !important;
+        box-shadow: 0 6px 25px rgba(178, 222, 37, 0.4) !important;
+    }
+
+    /* Mobile Language Picker */
+    .language-picker-mobile {
+        padding: 18px 24px !important;
+        border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+        margin-top: 16px !important;
+    }
+
+    .language-picker-mobile a {
+        min-height: 56px !important;
+    }
+
+    .language-picker-mobile .current-language {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        color: #1a1a2e !important;
+    }
+
+    .language-picker-mobile .icon svg {
+        fill: #099dff !important;
+    }
+
+    /* ============================================
+     RESPONSIVE ADJUSTMENTS
+     ============================================ */
+
+    @media (max-width: 1200px) {
+        .header-inner {
+            padding: 12px 30px !important;
+        }
+
+        .header-nav-item>a,
+        .header-nav-folder-title {
+            padding: 14px 16px !important;
+            font-size: 13px !important;
+        }
+    }
+
+    @media (max-width: 1024px) {
+        .header-inner {
+            padding: 12px 24px !important;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .header-inner {
+            padding: 10px 16px !important;
+        }
+
+        .header-title-logo img {
+            max-height: 42px !important;
+        }
+
+        /* Hide desktop nav on mobile */
+        .header-nav {
+            display: none !important;
+        }
+
+        .header-menu-nav-item a {
+            font-size: 15px !important;
+            padding: 16px 20px !important;
+            min-height: 52px !important;
+        }
+
+        .header-menu-cta {
+            padding: 20px 16px !important;
+            padding-top: 40px !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .header-title-logo img {
+            max-height: 38px !important;
+        }
+
+        .header-menu-nav-item a {
+            font-size: 14px !important;
+            padding: 14px 16px !important;
+            min-height: 48px !important;
+        }
+
+        .header-menu-cta a {
+            font-size: 14px !important;
+            padding: 14px 24px !important;
+        }
+    }
+
+    /* ============================================
+     ACTIVE NAV ITEM
+     ============================================ */
+
+    .header-nav-item--active>a,
+    .header-nav-item--active .header-nav-folder-title {
+        color: #099dff !important;
+    }
+
+    /* ============================================
+     ANIMATION
+     ============================================ */
+
+    .header--menu-open .header-menu {
+        animation: menuSlideIn 0.35s ease !important;
+    }
+
+    @keyframes menuSlideIn {
+        from {
+            opacity: 0;
+            transform: translateX(20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+</style>
+
+<script>
+    // Header Scroll Effect & Improved Dropdown Handling
+    (function () {
+        const header = document.getElementById('header');
+        if (!header) return;
+
+        // Scroll effect
+        function handleScroll() {
+            if (window.pageYOffset > 50) {
+                header.classList.add('scrolled');
+            } else {
+                header.classList.remove('scrolled');
+            }
+        }
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        handleScroll();
+
+        // Improved dropdown handling for desktop
+        const folderItems = document.querySelectorAll('.header-nav-item--folder');
+
+        folderItems.forEach(folder => {
+            const button = folder.querySelector('.header-nav-folder-title');
+            const content = folder.querySelector('.header-nav-folder-content');
+
+            if (!button || !content) return;
+
+            let hoverTimeout;
+            let isOpen = false;
+
+            // Mouse enter on folder container
+            folder.addEventListener('mouseenter', () => {
+                clearTimeout(hoverTimeout);
+                isOpen = true;
+                button.setAttribute('aria-expanded', 'true');
+            });
+
+            // Mouse leave with delay
+            folder.addEventListener('mouseleave', () => {
+                hoverTimeout = setTimeout(() => {
+                    isOpen = false;
+                    button.setAttribute('aria-expanded', 'false');
+                }, 150); // Small delay to allow moving to dropdown
+            });
+
+            // Keep open when hovering dropdown content
+            content.addEventListener('mouseenter', () => {
+                clearTimeout(hoverTimeout);
+                isOpen = true;
+                button.setAttribute('aria-expanded', 'true');
+            });
+
+            content.addEventListener('mouseleave', () => {
+                hoverTimeout = setTimeout(() => {
+                    isOpen = false;
+                    button.setAttribute('aria-expanded', 'false');
+                }, 100);
+            });
+
+            // Click support for touch devices
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                isOpen = !isOpen;
+                button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            });
+
+            // Keyboard accessibility
+            button.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    isOpen = !isOpen;
+                    button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                }
+                if (e.key === 'Escape') {
+                    isOpen = false;
+                    button.setAttribute('aria-expanded', 'false');
+                    button.focus();
+                }
+            });
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.header-nav-item--folder')) {
+                folderItems.forEach(folder => {
+                    const button = folder.querySelector('.header-nav-folder-title');
+                    if (button) button.setAttribute('aria-expanded', 'false');
+                });
+            }
+        });
+    })();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STARTFRANCHISE ARTICLE ENHANCEMENT — INJECT CODE              -->
+<!-- Paste di Squarespace: Settings > Advanced > Code Injection > Footer -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<!-- GANTI URL INI DENGAN URL RENDER ANDA SETELAH DEPLOY -->
+<script>window.SF_API_BASE = 'https://article-backend-hjnk.onrender.com';</script>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- CSS                                                            -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    .sf-enhanced-layout {
+        display: flex !important;
+        max-width: 1320px !important;
+        margin: 0 auto !important;
+        padding: 0 24px !important;
+        gap: 40px;
+        position: relative
+    }
+
+    .sf-enhanced-layout .sf-toc-sidebar {
+        width: 280px;
+        min-width: 280px;
+        flex-shrink: 0
+    }
+
+    .sf-enhanced-layout .sf-article-main {
+        flex: 1;
+        min-width: 0;
+        max-width: 720px
+    }
+
+    .sf-toc-sidebar {
+        position: sticky;
+        top: 100px;
+        height: fit-content;
+        max-height: calc(100vh - 120px);
+        overflow-y: auto;
+        font-family: 'Inter', sans-serif;
+        padding: 20px 0;
+        scrollbar-width: thin
+    }
+
+    .sf-toc-sidebar::-webkit-scrollbar {
+        width: 3px
+    }
+
+    .sf-toc-sidebar::-webkit-scrollbar-thumb {
+        background: #ccc;
+        border-radius: 3px
+    }
+
+    .sf-toc-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #555;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        transition: color .2s
+    }
+
+    .sf-toc-back:hover {
+        color: #0066FF
+    }
+
+    .sf-toc-back svg {
+        width: 16px;
+        height: 16px
+    }
+
+    .sf-toc-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px
+    }
+
+    .sf-toc-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 16px;
+        line-height: 1.4;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        cursor: pointer
+    }
+
+    .sf-toc-title svg {
+        min-width: 14px;
+        margin-top: 3px;
+        width: 14px;
+        height: 14px
+    }
+
+    .sf-toc-search {
+        width: 100%;
+        padding: 8px 12px 8px 32px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: 'Inter', sans-serif;
+        outline: none;
+        margin-bottom: 16px;
+        background: #f9f9f9 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") 10px center no-repeat;
+        transition: border-color .2s;
+        box-sizing: border-box
+    }
+
+    .sf-toc-search:focus {
+        border-color: #0066FF;
+        background-color: #fff
+    }
+
+    .sf-toc-list {
+        list-style: none;
+        padding: 0;
+        margin: 0
+    }
+
+    .sf-toc-item {
+        position: relative;
+        padding: 8px 12px 8px 16px;
+        font-size: 13px;
+        color: #555;
+        cursor: pointer;
+        border-left: 2px solid #e8e8e8;
+        transition: all .2s;
+        line-height: 1.4
+    }
+
+    .sf-toc-item:hover {
+        color: #0066FF;
+        background: #f0f6ff;
+        border-left-color: #0066FF
+    }
+
+    .sf-toc-item.active {
+        color: #0066FF;
+        font-weight: 600;
+        border-left-color: #0066FF;
+        background: #f0f6ff
+    }
+
+    .sf-toc-item.sf-toc-h3 {
+        padding-left: 28px;
+        font-size: 12px
+    }
+
+    .sf-chat-fab {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #0066FF, #00C853);
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 20px rgba(0, 102, 255, .4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        transition: transform .3s, box-shadow .3s;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-chat-fab:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 28px rgba(0, 102, 255, .5)
+    }
+
+    .sf-chat-fab svg {
+        width: 26px;
+        height: 26px
+    }
+
+    .sf-chat-panel {
+        position: fixed;
+        bottom: 90px;
+        right: 24px;
+        width: 380px;
+        max-height: 520px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, .15);
+        z-index: 99999;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+        animation: sfSlideUp .3s ease
+    }
+
+    @keyframes sfSlideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px)
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0)
+        }
+    }
+
+    .sf-chat-panel.open {
+        display: flex
+    }
+
+    .sf-chat-header {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #0066FF, #0052CC);
+        color: #fff;
+        display: flex;
+        justify-content: space-between;
+        align-items: center
+    }
+
+    .sf-chat-header-title {
+        font-weight: 600;
+        font-size: 15px
+    }
+
+    .sf-chat-close {
+        background: none;
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        font-size: 20px;
+        padding: 0;
+        line-height: 1
+    }
+
+    .sf-chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        min-height: 250px;
+        max-height: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px
+    }
+
+    .sf-chat-msg {
+        max-width: 85%;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 13px;
+        line-height: 1.5;
+        word-break: break-word
+    }
+
+    .sf-chat-msg.bot {
+        background: #f0f2f5;
+        color: #1a1a1a;
+        align-self: flex-start;
+        border-bottom-left-radius: 4px
+    }
+
+    .sf-chat-msg.user {
+        background: #0066FF;
+        color: #fff;
+        align-self: flex-end;
+        border-bottom-right-radius: 4px
+    }
+
+    .sf-chat-msg.typing {
+        font-style: italic;
+        color: #888
+    }
+
+    .sf-chat-suggestions {
+        padding: 0 16px 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px
+    }
+
+    .sf-chat-suggest-btn {
+        padding: 6px 12px;
+        border: 1px solid #e0e0e0;
+        border-radius: 20px;
+        background: #fafafa;
+        font-size: 11px;
+        cursor: pointer;
+        color: #555;
+        transition: all .2s;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-chat-suggest-btn:hover {
+        border-color: #0066FF;
+        color: #0066FF;
+        background: #f0f6ff
+    }
+
+    .sf-chat-input-area {
+        display: flex;
+        padding: 12px 16px;
+        border-top: 1px solid #eee;
+        gap: 8px;
+        align-items: center
+    }
+
+    .sf-chat-input {
+        flex: 1;
+        padding: 10px 14px;
+        border: 1px solid #e0e0e0;
+        border-radius: 24px;
+        font-size: 13px;
+        outline: none;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-chat-input:focus {
+        border-color: #0066FF
+    }
+
+    .sf-chat-send {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #0066FF;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background .2s
+    }
+
+    .sf-chat-send:hover {
+        background: #0052CC
+    }
+
+    .sf-chat-send:disabled {
+        background: #ccc;
+        cursor: not-allowed
+    }
+
+    .sf-recommendations {
+        margin-top: 60px;
+        padding: 40px 0;
+        border-top: 1px solid #eee;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-rec-title {
+        text-align: center;
+        font-size: 28px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 32px
+    }
+
+    .sf-rec-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px
+    }
+
+    .sf-rec-card {
+        border: 1px solid #eee;
+        border-radius: 12px;
+        overflow: hidden;
+        transition: box-shadow .3s, transform .3s;
+        background: #fff
+    }
+
+    .sf-rec-card:hover {
+        box-shadow: 0 8px 30px rgba(0, 0, 0, .1);
+        transform: translateY(-4px)
+    }
+
+    .sf-rec-card-img {
+        width: 100%;
+        height: 180px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 32px;
+        font-weight: 700
+    }
+
+    .sf-rec-card-body {
+        padding: 16px
+    }
+
+    .sf-rec-card-meta {
+        font-size: 11px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        margin-bottom: 8px
+    }
+
+    .sf-rec-card-link {
+        font-size: 15px;
+        font-weight: 600;
+        color: #1a1a1a;
+        text-decoration: none;
+        line-height: 1.4;
+        display: block;
+        margin-bottom: 8px
+    }
+
+    .sf-rec-card-link:hover {
+        color: #0066FF
+    }
+
+    .sf-rec-card-excerpt {
+        font-size: 12px;
+        color: #777;
+        line-height: 1.5
+    }
+
+    .sf-comments {
+        margin-top: 48px;
+        padding-top: 40px;
+        border-top: 1px solid #eee;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-comments-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 24px
+    }
+
+    .sf-comment-form {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 32px
+    }
+
+    .sf-comment-form input,
+    .sf-comment-form textarea {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 14px;
+        font-family: 'Inter', sans-serif;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+        outline: none
+    }
+
+    .sf-comment-form input:focus,
+    .sf-comment-form textarea:focus {
+        border-color: #0066FF
+    }
+
+    .sf-comment-form textarea {
+        resize: vertical;
+        min-height: 80px
+    }
+
+    .sf-comment-form button {
+        padding: 10px 24px;
+        background: #0066FF;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Inter', sans-serif;
+        transition: background .2s
+    }
+
+    .sf-comment-form button:hover {
+        background: #0052CC
+    }
+
+    .sf-comment-item {
+        padding: 16px 0;
+        border-bottom: 1px solid #f0f0f0
+    }
+
+    .sf-comment-item:last-child {
+        border-bottom: none
+    }
+
+    .sf-comment-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px
+    }
+
+    .sf-comment-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #1a1a1a
+    }
+
+    .sf-comment-date {
+        font-size: 12px;
+        color: #999
+    }
+
+    .sf-comment-text {
+        font-size: 14px;
+        color: #444;
+        line-height: 1.6;
+        margin-bottom: 10px
+    }
+
+    .sf-comment-actions {
+        display: flex;
+        gap: 16px;
+        align-items: center
+    }
+
+    .sf-comment-actions button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 12px;
+        color: #888;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-family: 'Inter', sans-serif;
+        transition: color .2s;
+        padding: 4px
+    }
+
+    .sf-comment-actions button:hover {
+        color: #0066FF
+    }
+
+    .sf-replies {
+        margin-left: 24px;
+        padding-left: 16px;
+        border-left: 2px solid #e8e8e8
+    }
+
+    .sf-reply-form {
+        margin: 12px 0 12px 24px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 8px
+    }
+
+    .sf-reply-form input,
+    .sf-reply-form textarea {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: 'Inter', sans-serif;
+        margin-bottom: 8px;
+        box-sizing: border-box;
+        outline: none
+    }
+
+    .sf-reply-form textarea {
+        resize: vertical;
+        min-height: 60px
+    }
+
+    .sf-reply-form-btns {
+        display: flex;
+        gap: 8px
+    }
+
+    .sf-reply-form button {
+        padding: 6px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Inter', sans-serif
+    }
+
+    .sf-reply-form .sf-btn-submit {
+        background: #0066FF;
+        color: #fff
+    }
+
+    .sf-reply-form .sf-btn-cancel {
+        background: #e0e0e0;
+        color: #555
+    }
+
+    .sf-no-comments {
+        text-align: center;
+        color: #999;
+        font-size: 14px;
+        padding: 20px
+    }
+
+    @media(max-width:900px) {
+        .sf-enhanced-layout {
+            flex-direction: column !important
+        }
+
+        .sf-toc-sidebar {
+            width: 100% !important;
+            min-width: unset !important;
+            position: relative !important;
+            top: 0 !important;
+            max-height: none
+        }
+
+        .sf-rec-grid {
+            grid-template-columns: 1fr !important
+        }
+
+        .sf-chat-panel {
+            width: calc(100vw - 32px) !important;
+            right: 16px !important;
+            bottom: 80px !important
+        }
+    }
+</style>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT (REST API — Render Backend)                        -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script defer>
+    (function () {
+        'use strict';
+
+        var API = window.SF_API_BASE || '';
+        var SLUG = window.location.pathname.replace('/article/', '').replace(/\/$/, '');
+        if (!window.location.pathname.startsWith('/article/') || SLUG === '') return;
+
+        // ═════════════════════════════════════════
+        // REST API HELPERS
+        // ═════════════════════════════════════════
+        function apiGet(url) {
+            return fetch(API + url).then(function (r) { return r.json() });
+        }
+        function apiPost(url, data) {
+            return fetch(API + url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(function (r) { return r.json() });
+        }
+
+        // ═════════════════════════════════════════
+        // HELPERS
+        // ═════════════════════════════════════════
+        function getFP() {
+            var fp = localStorage.getItem('sf_fp');
+            if (!fp) { fp = 'fp_' + Math.random().toString(36).substr(2, 12) + Date.now(); localStorage.setItem('sf_fp', fp) }
+            return fp;
+        }
+        function timeAgo(d) {
+            var s = Math.floor((Date.now() - new Date(d)) / 1000);
+            if (s < 60) return 'baru saja'; if (s < 3600) return Math.floor(s / 60) + ' menit lalu';
+            if (s < 86400) return Math.floor(s / 3600) + ' jam lalu'; return Math.floor(s / 86400) + ' hari lalu';
+        }
+        function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML }
+
+        // ═════════════════════════════════════════
+        // INIT
+        // ═════════════════════════════════════════
+        function init() {
+            var body = document.querySelector('.blog-item-content-wrapper')
+                || document.querySelector('.entry-content')
+                || document.querySelector('article')
+                || document.querySelector('.blog-item-wrapper');
+            if (!body) return setTimeout(init, 500);
+            buildTOC(body); buildChat(body); buildRecs(body); buildComments(body);
+        }
+
+        // ═════════════════════════════════════════
+        // 1. DAFTAR ISI (TOC SIDEBAR)
+        // ═════════════════════════════════════════
+        function buildTOC(articleBody) {
+            var content = document.querySelector('.blog-item-content') || articleBody;
+            var headings = content.querySelectorAll('h1,h2,h3');
+            if (headings.length < 2) return;
+            var titleEl = document.querySelector('.blog-item-title h1, .entry-title, h1.blog-title');
+            var titleText = titleEl ? titleEl.textContent.trim() : document.title;
+            var parent = articleBody.parentElement;
+            var wrap = document.createElement('div'); wrap.className = 'sf-enhanced-layout';
+            parent.insertBefore(wrap, articleBody);
+            var sidebar = document.createElement('aside'); sidebar.className = 'sf-toc-sidebar';
+            var main = document.createElement('div'); main.className = 'sf-article-main';
+            main.appendChild(articleBody); wrap.appendChild(sidebar); wrap.appendChild(main);
+            sidebar.innerHTML =
+                '<a href="/article" class="sf-toc-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Kembali</a>' +
+                '<div class="sf-toc-label">Daftar Isi</div>' +
+                '<div class="sf-toc-title" id="sf-toc-top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg><span>' + titleText.substring(0, 80) + '</span></div>' +
+                '<input type="text" class="sf-toc-search" placeholder="Cari bab..." id="sf-toc-search">' +
+                '<ul class="sf-toc-list" id="sf-toc-list"></ul>';
+            var list = sidebar.querySelector('#sf-toc-list');
+            var search = sidebar.querySelector('#sf-toc-search');
+            headings.forEach(function (h, i) {
+                if (!h.id) h.id = 'sf-h-' + i;
+                var li = document.createElement('li');
+                li.className = 'sf-toc-item' + (h.tagName === 'H3' ? ' sf-toc-h3' : '');
+                li.textContent = h.textContent.trim(); li.setAttribute('data-target', h.id);
+                li.addEventListener('click', function () { document.getElementById(h.id).scrollIntoView({ behavior: 'smooth', block: 'start' }) });
+                list.appendChild(li);
+            });
+            search.addEventListener('input', function () {
+                var q = this.value.toLowerCase();
+                list.querySelectorAll('.sf-toc-item').forEach(function (li) { li.style.display = li.textContent.toLowerCase().includes(q) ? '' : 'none' });
+            });
+            var items = list.querySelectorAll('.sf-toc-item');
+            var obs = new IntersectionObserver(function (entries) {
+                entries.forEach(function (e) {
+                    if (e.isIntersecting) {
+                        items.forEach(function (li) { li.classList.remove('active') });
+                        var a = list.querySelector('[data-target="' + e.target.id + '"]'); if (a) a.classList.add('active')
+                    }
+                });
+            }, { rootMargin: '-100px 0px -70% 0px' });
+            headings.forEach(function (h) { obs.observe(h) });
+            document.getElementById('sf-toc-top').addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }) });
+        }
+
+        // ═════════════════════════════════════════
+        // 2. AI CHATBOT
+        // ═════════════════════════════════════════
+        function buildChat(articleBody) {
+            var artText = (articleBody.innerText || articleBody.textContent || '').substring(0, 15000);
+            var artTitle = (document.querySelector('h1') || {}).textContent || document.title;
+            var fab = document.createElement('button'); fab.className = 'sf-chat-fab';
+            fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+            fab.title = 'Tanya AI tentang artikel ini'; document.body.appendChild(fab);
+            var panel = document.createElement('div'); panel.className = 'sf-chat-panel';
+            panel.innerHTML =
+                '<div class="sf-chat-header"><span class="sf-chat-header-title">\uD83E\uDD16 Tanya AI \u2014 Artikel Ini</span><button class="sf-chat-close">\u2715</button></div>' +
+                '<div class="sf-chat-messages" id="sf-chat-msgs"><div class="sf-chat-msg bot">Halo! Saya bisa menjawab pertanyaan seputar artikel ini. Silakan bertanya!</div></div>' +
+                '<div class="sf-chat-suggestions" id="sf-chat-sugg"><button class="sf-chat-suggest-btn">Ringkasan artikel</button><button class="sf-chat-suggest-btn">Berapa investasinya?</button><button class="sf-chat-suggest-btn">Keuntungan bisnis ini?</button></div>' +
+                '<div class="sf-chat-input-area"><input type="text" class="sf-chat-input" id="sf-ci" placeholder="Ketik pertanyaan..."><button class="sf-chat-send" id="sf-cs"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button></div>';
+            document.body.appendChild(panel);
+            var open = false;
+            fab.addEventListener('click', function () { open = !open; panel.classList.toggle('open', open) });
+            panel.querySelector('.sf-chat-close').addEventListener('click', function () { open = false; panel.classList.remove('open') });
+            panel.querySelectorAll('.sf-chat-suggest-btn').forEach(function (b) { b.addEventListener('click', function () { send(this.textContent) }) });
+            var ci = document.getElementById('sf-ci'), cs = document.getElementById('sf-cs');
+            cs.addEventListener('click', function () { send(ci.value) });
+            ci.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(ci.value) });
+            function send(msg) {
+                msg = msg.trim(); if (!msg) return; ci.value = '';
+                var msgs = document.getElementById('sf-chat-msgs');
+                msgs.innerHTML += '<div class="sf-chat-msg user">' + esc(msg) + '</div>';
+                msgs.innerHTML += '<div class="sf-chat-msg bot typing" id="sf-typing">Mengetik...</div>';
+                msgs.scrollTop = msgs.scrollHeight;
+                document.getElementById('sf-chat-sugg').style.display = 'none';
+                apiPost('/api/chat', { message: msg, articleContent: artText, articleTitle: artTitle })
+                    .then(function (d) {
+                        var t = document.getElementById('sf-typing'); if (t) t.remove();
+                        msgs.innerHTML += '<div class="sf-chat-msg bot">' + esc(d.reply || d.error || 'Maaf, terjadi kesalahan.') + '</div>';
+                        msgs.scrollTop = msgs.scrollHeight;
+                    })
+                    .catch(function () {
+                        var t = document.getElementById('sf-typing'); if (t) t.remove();
+                        msgs.innerHTML += '<div class="sf-chat-msg bot">Tidak dapat terhubung ke server.</div>';
+                    });
+            }
+        }
+
+        // ═════════════════════════════════════════
+        // 3. ARTIKEL TERKAIT
+        // ═════════════════════════════════════════
+        function buildRecs(articleBody) {
+            var container = document.querySelector('.sf-article-main') || articleBody.parentElement;
+            var sec = document.createElement('div'); sec.className = 'sf-recommendations';
+            sec.innerHTML = '<h2 class="sf-rec-title">Artikel Terkait</h2><div class="sf-rec-grid" id="sf-rec-grid"><p style="text-align:center;color:#999;grid-column:1/-1">Memuat artikel terkait...</p></div>';
+            container.appendChild(sec);
+            var grid = sec.querySelector('#sf-rec-grid');
+
+            fetch('/article')
+              .then(function(r) { return r.text() })
+              .then(function(html) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(html, 'text/html');
+                var cards = doc.querySelectorAll('.blog-basic-grid--container');
+                var articles = [];
+                var currentPath = window.location.pathname;
+
+                cards.forEach(function(card) {
+                  var titleEl = card.querySelector('.blog-title a');
+                  var imgEl = card.querySelector('.image-wrapper img');
+                  var excerptEl = card.querySelector('.blog-excerpt p');
+                  var dateEl = card.querySelector('.blog-date');
+                  if (!titleEl) return;
+
+                  var href = titleEl.getAttribute('href') || '';
+                  if (href === currentPath) return; // skip current article
+
+                  var imgSrc = '';
+                  if (imgEl) {
+                    imgSrc = imgEl.getAttribute('data-src') || imgEl.getAttribute('src') || '';
+                    if (imgSrc && !imgSrc.startsWith('http')) imgSrc = 'https://www.startfranchise.id' + imgSrc;
+                  }
+
+                  articles.push({
+                    title: titleEl.textContent.trim(),
+                    href: href,
+                    image: imgSrc,
+                    excerpt: excerptEl ? excerptEl.textContent.trim().substring(0, 120) + '...' : '',
+                    date: dateEl ? dateEl.textContent.trim() : ''
+                  });
+                });
+
+                articles = articles.slice(0, 6);
+                grid.innerHTML = '';
+
+                if (articles.length === 0) {
+                  grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Belum ada rekomendasi.</p>';
+                  return;
+                }
+
+                articles.forEach(function(a) {
+                  var card = document.createElement('div');
+                  card.className = 'sf-rec-card';
+                  var imgHtml = a.image
+                    ? '<a href="' + a.href + '"><img src="' + a.image + '?format=500w" alt="' + esc(a.title) + '" style="width:100%;height:180px;object-fit:cover;display:block" loading="lazy"></a>'
+                    : '<div class="sf-rec-card-img" style="background:linear-gradient(135deg,#667eea,#764ba2)">SF</div>';
+                  card.innerHTML = imgHtml +
+                    '<div class="sf-rec-card-body">' +
+                    '<div class="sf-rec-card-meta">' + (a.date || 'Article') + '</div>' +
+                    '<a href="' + a.href + '" class="sf-rec-card-link">' + esc(a.title.substring(0, 80)) + '</a>' +
+                    '<p class="sf-rec-card-excerpt">' + esc(a.excerpt) + '</p>' +
+                    '</div>';
+                  grid.appendChild(card);
+                });
+              })
+              .catch(function() {
+                grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Gagal memuat artikel terkait.</p>';
+              });
+        }
+
+        // ═════════════════════════════════════════
+        // 4. KOMENTAR
+        // ═════════════════════════════════════════
+        function buildComments(articleBody) {
+            var container = document.querySelector('.sf-article-main') || articleBody.parentElement;
+            var sec = document.createElement('div'); sec.className = 'sf-comments';
+            sec.innerHTML = '<h2 class="sf-comments-title">Komentar</h2>' +
+                '<div class="sf-comment-form" id="sf-cf"><input type="text" id="sf-cn" placeholder="Nama Anda *"><input type="email" id="sf-ce" placeholder="Email (opsional)"><textarea id="sf-cm" placeholder="Tulis komentar Anda..."></textarea><button id="sf-cb">Kirim Komentar</button></div>' +
+                '<div id="sf-cl"></div>';
+            container.appendChild(sec);
+            var fp = getFP();
+            document.getElementById('sf-cb').addEventListener('click', function () {
+                var n = document.getElementById('sf-cn').value.trim(), e = document.getElementById('sf-ce').value.trim(), m = document.getElementById('sf-cm').value.trim();
+                if (!n || !m) return alert('Nama dan komentar wajib diisi!');
+                apiPost('/api/comments', { article_slug: SLUG, name: n, email: e, message: m }).then(function (d) { if(d.error){alert(d.error);return;} document.getElementById('sf-cm').value = ''; load() }).catch(function(){alert('Gagal mengirim komentar')});
+            });
+            function load() {
+                apiGet('/api/comments?slug=' + encodeURIComponent(SLUG))
+                    .then(function (d) { render(d) })
+                    .catch(function () { document.getElementById('sf-cl').innerHTML = '<p class="sf-no-comments">Tidak dapat memuat komentar.</p>' });
+            }
+            function render(comments) {
+                var el = document.getElementById('sf-cl');
+                if (!comments || comments.length === 0) { el.innerHTML = '<p class="sf-no-comments">Belum ada komentar. Jadilah yang pertama!</p>'; return }
+                el.innerHTML = ''; comments.forEach(function (c) { el.appendChild(mkComment(c)) });
+            }
+            function mkComment(c) {
+                var div = document.createElement('div'); div.className = 'sf-comment-item';
+                div.innerHTML = '<div class="sf-comment-header"><span class="sf-comment-name">' + esc(c.name) + '</span><span class="sf-comment-date">' + timeAgo(c.created_at) + '</span></div>' +
+                    '<div class="sf-comment-text">' + esc(c.message) + '</div>' +
+                    '<div class="sf-comment-actions"><button class="sf-lk" data-id="' + c.id + '">\uD83D\uDC4D <span>' + (c.likes || 0) + '</span></button><button class="sf-dk" data-id="' + c.id + '">\uD83D\uDC4E <span>' + (c.dislikes || 0) + '</span></button><button class="sf-rp" data-id="' + c.id + '">Balas</button><button class="sf-del" data-id="' + c.id + '" style="color:#e74c3c">\uD83D\uDDD1\uFE0F Hapus</button></div>';
+                div.querySelector('.sf-lk').addEventListener('click', function () { react(c.id, 'like') });
+                div.querySelector('.sf-dk').addEventListener('click', function () { react(c.id, 'dislike') });
+                div.querySelector('.sf-rp').addEventListener('click', function () { toggleReply(div, c.id) });
+                div.querySelector('.sf-del').addEventListener('click', function () { deleteComment(c.id) });
+                if (c.replies && c.replies.length > 0) {
+                    var rDiv = document.createElement('div'); rDiv.className = 'sf-replies';
+                    c.replies.forEach(function (r) { rDiv.appendChild(mkComment(r)) }); div.appendChild(rDiv)
+                }
+                return div;
+            }
+            function toggleReply(el, pid) {
+                var ex = el.querySelector('.sf-reply-form'); if (ex) { ex.remove(); return }
+                var f = document.createElement('div'); f.className = 'sf-reply-form';
+                f.innerHTML = '<input type="text" placeholder="Nama Anda *" class="sf-rn"><textarea placeholder="Tulis balasan..." class="sf-rm"></textarea><div class="sf-reply-form-btns"><button class="sf-btn-submit">Balas</button><button class="sf-btn-cancel">Batal</button></div>';
+                f.querySelector('.sf-btn-cancel').addEventListener('click', function () { f.remove() });
+                f.querySelector('.sf-btn-submit').addEventListener('click', function () {
+                    var n = f.querySelector('.sf-rn').value.trim(), m = f.querySelector('.sf-rm').value.trim(); if (!n || !m) return;
+                    apiPost('/api/comments', { article_slug: SLUG, parent_id: pid, name: n, email: '', message: m }).then(function () { load() });
+                });
+                el.appendChild(f);
+            }
+            function react(id, type) {
+                apiPost('/api/react', { comment_id: id, reaction_type: type, user_fingerprint: fp }).then(function () { load() });
+            }
+            function deleteComment(id) {
+                if (!confirm('Hapus komentar ini?')) return;
+                fetch(API + '/api/comments/' + id + '?fingerprint=' + fp, { method: 'DELETE' }).then(function(r){return r.json()}).then(function () { load() });
+            }
+            load();
+        }
+
+        // BOOT
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+        else init();
+    })();
+</script>

@@ -1,0 +1,309 @@
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STARTFRANCHISE ARTICLE ENHANCEMENT — INJECT CODE              -->
+<!-- Paste di Squarespace: Settings > Advanced > Code Injection > Footer -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<!-- GANTI URL INI DENGAN URL RENDER ANDA SETELAH DEPLOY -->
+<script>window.SF_API_BASE = 'https://article-backend-hjnk.onrender.com';</script>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- CSS                                                            -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+.sf-enhanced-layout{display:flex!important;max-width:1320px!important;margin:0 auto!important;padding:0 24px!important;gap:40px;position:relative}
+.sf-enhanced-layout .sf-toc-sidebar{width:280px;min-width:280px;flex-shrink:0}
+.sf-enhanced-layout .sf-article-main{flex:1;min-width:0;max-width:720px}
+.sf-toc-sidebar{position:sticky;top:100px;height:fit-content;max-height:calc(100vh - 120px);overflow-y:auto;font-family:'Inter',sans-serif;padding:20px 0;scrollbar-width:thin}
+.sf-toc-sidebar::-webkit-scrollbar{width:3px}.sf-toc-sidebar::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+.sf-toc-back{display:inline-flex;align-items:center;gap:6px;color:#555;text-decoration:none;font-size:14px;font-weight:500;margin-bottom:16px;transition:color .2s}
+.sf-toc-back:hover{color:#0066FF}.sf-toc-back svg{width:16px;height:16px}
+.sf-toc-label{font-size:12px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.sf-toc-title{font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:16px;line-height:1.4;display:flex;align-items:flex-start;gap:8px;cursor:pointer}
+.sf-toc-title svg{min-width:14px;margin-top:3px;width:14px;height:14px}
+.sf-toc-search{width:100%;padding:8px 12px 8px 32px;border:1px solid #e0e0e0;border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;margin-bottom:16px;background:#f9f9f9 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") 10px center no-repeat;transition:border-color .2s;box-sizing:border-box}
+.sf-toc-search:focus{border-color:#0066FF;background-color:#fff}
+.sf-toc-list{list-style:none;padding:0;margin:0}
+.sf-toc-item{position:relative;padding:8px 12px 8px 16px;font-size:13px;color:#555;cursor:pointer;border-left:2px solid #e8e8e8;transition:all .2s;line-height:1.4}
+.sf-toc-item:hover{color:#0066FF;background:#f0f6ff;border-left-color:#0066FF}
+.sf-toc-item.active{color:#0066FF;font-weight:600;border-left-color:#0066FF;background:#f0f6ff}
+.sf-toc-item.sf-toc-h3{padding-left:28px;font-size:12px}
+.sf-chat-fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#0066FF,#00C853);color:#fff;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(0,102,255,.4);display:flex;align-items:center;justify-content:center;z-index:99999;transition:transform .3s,box-shadow .3s;font-family:'Inter',sans-serif}
+.sf-chat-fab:hover{transform:scale(1.1);box-shadow:0 6px 28px rgba(0,102,255,.5)}.sf-chat-fab svg{width:26px;height:26px}
+.sf-chat-panel{position:fixed;bottom:90px;right:24px;width:380px;max-height:520px;background:#fff;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.15);z-index:99999;display:none;flex-direction:column;overflow:hidden;font-family:'Inter',sans-serif;animation:sfSlideUp .3s ease}
+@keyframes sfSlideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.sf-chat-panel.open{display:flex}
+.sf-chat-header{padding:16px 20px;background:linear-gradient(135deg,#0066FF,#0052CC);color:#fff;display:flex;justify-content:space-between;align-items:center}
+.sf-chat-header-title{font-weight:600;font-size:15px}
+.sf-chat-close{background:none;border:none;color:#fff;cursor:pointer;font-size:20px;padding:0;line-height:1}
+.sf-chat-messages{flex:1;overflow-y:auto;padding:16px;min-height:250px;max-height:320px;display:flex;flex-direction:column;gap:12px}
+.sf-chat-msg{max-width:85%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-word}
+.sf-chat-msg.bot{background:#f0f2f5;color:#1a1a1a;align-self:flex-start;border-bottom-left-radius:4px}
+.sf-chat-msg.user{background:#0066FF;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.sf-chat-msg.typing{font-style:italic;color:#888}
+.sf-chat-suggestions{padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:6px}
+.sf-chat-suggest-btn{padding:6px 12px;border:1px solid #e0e0e0;border-radius:20px;background:#fafafa;font-size:11px;cursor:pointer;color:#555;transition:all .2s;font-family:'Inter',sans-serif}
+.sf-chat-suggest-btn:hover{border-color:#0066FF;color:#0066FF;background:#f0f6ff}
+.sf-chat-input-area{display:flex;padding:12px 16px;border-top:1px solid #eee;gap:8px;align-items:center}
+.sf-chat-input{flex:1;padding:10px 14px;border:1px solid #e0e0e0;border-radius:24px;font-size:13px;outline:none;font-family:'Inter',sans-serif}
+.sf-chat-input:focus{border-color:#0066FF}
+.sf-chat-send{width:36px;height:36px;border-radius:50%;background:#0066FF;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.sf-chat-send:hover{background:#0052CC}.sf-chat-send:disabled{background:#ccc;cursor:not-allowed}
+.sf-recommendations{margin-top:60px;padding:40px 0;border-top:1px solid #eee;font-family:'Inter',sans-serif}
+.sf-rec-title{text-align:center;font-size:28px;font-weight:700;color:#1a1a1a;margin-bottom:32px}
+.sf-rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.sf-rec-card{border:1px solid #eee;border-radius:12px;overflow:hidden;transition:box-shadow .3s,transform .3s;background:#fff}
+.sf-rec-card:hover{box-shadow:0 8px 30px rgba(0,0,0,.1);transform:translateY(-4px)}
+.sf-rec-card-img{width:100%;height:180px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px;font-weight:700}
+.sf-rec-card-body{padding:16px}.sf-rec-card-meta{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.sf-rec-card-link{font-size:15px;font-weight:600;color:#1a1a1a;text-decoration:none;line-height:1.4;display:block;margin-bottom:8px}
+.sf-rec-card-link:hover{color:#0066FF}.sf-rec-card-excerpt{font-size:12px;color:#777;line-height:1.5}
+.sf-comments{margin-top:48px;padding-top:40px;border-top:1px solid #eee;font-family:'Inter',sans-serif}
+.sf-comments-title{font-size:24px;font-weight:700;color:#1a1a1a;margin-bottom:24px}
+.sf-comment-form{background:#f8f9fa;border-radius:12px;padding:24px;margin-bottom:32px}
+.sf-comment-form input,.sf-comment-form textarea{width:100%;padding:10px 14px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;margin-bottom:12px;box-sizing:border-box;outline:none}
+.sf-comment-form input:focus,.sf-comment-form textarea:focus{border-color:#0066FF}
+.sf-comment-form textarea{resize:vertical;min-height:80px}
+.sf-comment-form button{padding:10px 24px;background:#0066FF;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s}
+.sf-comment-form button:hover{background:#0052CC}
+.sf-comment-item{padding:16px 0;border-bottom:1px solid #f0f0f0}.sf-comment-item:last-child{border-bottom:none}
+.sf-comment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.sf-comment-name{font-weight:600;font-size:14px;color:#1a1a1a}.sf-comment-date{font-size:12px;color:#999}
+.sf-comment-text{font-size:14px;color:#444;line-height:1.6;margin-bottom:10px}
+.sf-comment-actions{display:flex;gap:16px;align-items:center}
+.sf-comment-actions button{background:none;border:none;cursor:pointer;font-size:12px;color:#888;display:flex;align-items:center;gap:4px;font-family:'Inter',sans-serif;transition:color .2s;padding:4px}
+.sf-comment-actions button:hover{color:#0066FF}
+.sf-replies{margin-left:24px;padding-left:16px;border-left:2px solid #e8e8e8}
+.sf-reply-form{margin:12px 0 12px 24px;padding:12px;background:#f8f9fa;border-radius:8px}
+.sf-reply-form input,.sf-reply-form textarea{width:100%;padding:8px 12px;border:1px solid #e0e0e0;border-radius:6px;font-size:13px;font-family:'Inter',sans-serif;margin-bottom:8px;box-sizing:border-box;outline:none}
+.sf-reply-form textarea{resize:vertical;min-height:60px}
+.sf-reply-form-btns{display:flex;gap:8px}
+.sf-reply-form button{padding:6px 16px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.sf-reply-form .sf-btn-submit{background:#0066FF;color:#fff}.sf-reply-form .sf-btn-cancel{background:#e0e0e0;color:#555}
+.sf-no-comments{text-align:center;color:#999;font-size:14px;padding:20px}
+@media(max-width:900px){
+  .sf-enhanced-layout{flex-direction:column!important}
+  .sf-toc-sidebar{width:100%!important;min-width:unset!important;position:relative!important;top:0!important;max-height:none}
+  .sf-rec-grid{grid-template-columns:1fr!important}
+  .sf-chat-panel{width:calc(100vw - 32px)!important;right:16px!important;bottom:80px!important}
+}
+</style>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT (REST API — Render Backend)                        -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script defer>
+(function(){
+  'use strict';
+
+  var API = window.SF_API_BASE || '';
+  var SLUG = window.location.pathname.replace('/article/','').replace(/\/$/,'');
+  if(!window.location.pathname.startsWith('/article/') || SLUG==='') return;
+
+  // ═════════════════════════════════════════
+  // REST API HELPERS
+  // ═════════════════════════════════════════
+  function apiGet(url){
+    return fetch(API + url).then(function(r){return r.json()});
+  }
+  function apiPost(url, data){
+    return fetch(API + url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(data)
+    }).then(function(r){return r.json()});
+  }
+
+  // ═════════════════════════════════════════
+  // HELPERS
+  // ═════════════════════════════════════════
+  function getFP(){
+    var fp=localStorage.getItem('sf_fp');
+    if(!fp){fp='fp_'+Math.random().toString(36).substr(2,12)+Date.now();localStorage.setItem('sf_fp',fp)}
+    return fp;
+  }
+  function timeAgo(d){
+    var s=Math.floor((Date.now()-new Date(d))/1000);
+    if(s<60)return'baru saja';if(s<3600)return Math.floor(s/60)+' menit lalu';
+    if(s<86400)return Math.floor(s/3600)+' jam lalu';return Math.floor(s/86400)+' hari lalu';
+  }
+  function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+
+  // ═════════════════════════════════════════
+  // INIT
+  // ═════════════════════════════════════════
+  function init(){
+    var body=document.querySelector('.blog-item-content-wrapper')
+      ||document.querySelector('.entry-content')
+      ||document.querySelector('article')
+      ||document.querySelector('.blog-item-wrapper');
+    if(!body) return setTimeout(init,500);
+    buildTOC(body); buildChat(body); buildRecs(body); buildComments(body);
+  }
+
+  // ═════════════════════════════════════════
+  // 1. DAFTAR ISI (TOC SIDEBAR)
+  // ═════════════════════════════════════════
+  function buildTOC(articleBody){
+    var content=document.querySelector('.blog-item-content')||articleBody;
+    var headings=content.querySelectorAll('h1,h2,h3');
+    if(headings.length<2) return;
+    var titleEl=document.querySelector('.blog-item-title h1, .entry-title, h1.blog-title');
+    var titleText=titleEl?titleEl.textContent.trim():document.title;
+    var parent=articleBody.parentElement;
+    var wrap=document.createElement('div');wrap.className='sf-enhanced-layout';
+    parent.insertBefore(wrap,articleBody);
+    var sidebar=document.createElement('aside');sidebar.className='sf-toc-sidebar';
+    var main=document.createElement('div');main.className='sf-article-main';
+    main.appendChild(articleBody);wrap.appendChild(sidebar);wrap.appendChild(main);
+    sidebar.innerHTML=
+      '<a href="/article" class="sf-toc-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Kembali</a>'+
+      '<div class="sf-toc-label">Daftar Isi</div>'+
+      '<div class="sf-toc-title" id="sf-toc-top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg><span>'+titleText.substring(0,80)+'</span></div>'+
+      '<input type="text" class="sf-toc-search" placeholder="Cari bab..." id="sf-toc-search">'+
+      '<ul class="sf-toc-list" id="sf-toc-list"></ul>';
+    var list=sidebar.querySelector('#sf-toc-list');
+    var search=sidebar.querySelector('#sf-toc-search');
+    headings.forEach(function(h,i){
+      if(!h.id) h.id='sf-h-'+i;
+      var li=document.createElement('li');
+      li.className='sf-toc-item'+(h.tagName==='H3'?' sf-toc-h3':'');
+      li.textContent=h.textContent.trim();li.setAttribute('data-target',h.id);
+      li.addEventListener('click',function(){document.getElementById(h.id).scrollIntoView({behavior:'smooth',block:'start'})});
+      list.appendChild(li);
+    });
+    search.addEventListener('input',function(){
+      var q=this.value.toLowerCase();
+      list.querySelectorAll('.sf-toc-item').forEach(function(li){li.style.display=li.textContent.toLowerCase().includes(q)?'':'none'});
+    });
+    var items=list.querySelectorAll('.sf-toc-item');
+    var obs=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){items.forEach(function(li){li.classList.remove('active')});
+        var a=list.querySelector('[data-target="'+e.target.id+'"]');if(a) a.classList.add('active')}
+      });
+    },{rootMargin:'-100px 0px -70% 0px'});
+    headings.forEach(function(h){obs.observe(h)});
+    document.getElementById('sf-toc-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'})});
+  }
+
+  // ═════════════════════════════════════════
+  // 2. AI CHATBOT
+  // ═════════════════════════════════════════
+  function buildChat(articleBody){
+    var artText=(articleBody.innerText||articleBody.textContent||'').substring(0,15000);
+    var artTitle=(document.querySelector('h1')||{}).textContent||document.title;
+    var fab=document.createElement('button');fab.className='sf-chat-fab';
+    fab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    fab.title='Tanya AI tentang artikel ini';document.body.appendChild(fab);
+    var panel=document.createElement('div');panel.className='sf-chat-panel';
+    panel.innerHTML=
+      '<div class="sf-chat-header"><span class="sf-chat-header-title">\uD83E\uDD16 Tanya AI \u2014 Artikel Ini</span><button class="sf-chat-close">\u2715</button></div>'+
+      '<div class="sf-chat-messages" id="sf-chat-msgs"><div class="sf-chat-msg bot">Halo! Saya bisa menjawab pertanyaan seputar artikel ini. Silakan bertanya!</div></div>'+
+      '<div class="sf-chat-suggestions" id="sf-chat-sugg"><button class="sf-chat-suggest-btn">Ringkasan artikel</button><button class="sf-chat-suggest-btn">Berapa investasinya?</button><button class="sf-chat-suggest-btn">Keuntungan bisnis ini?</button></div>'+
+      '<div class="sf-chat-input-area"><input type="text" class="sf-chat-input" id="sf-ci" placeholder="Ketik pertanyaan..."><button class="sf-chat-send" id="sf-cs"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button></div>';
+    document.body.appendChild(panel);
+    var open=false;
+    fab.addEventListener('click',function(){open=!open;panel.classList.toggle('open',open)});
+    panel.querySelector('.sf-chat-close').addEventListener('click',function(){open=false;panel.classList.remove('open')});
+    panel.querySelectorAll('.sf-chat-suggest-btn').forEach(function(b){b.addEventListener('click',function(){send(this.textContent)})});
+    var ci=document.getElementById('sf-ci'),cs=document.getElementById('sf-cs');
+    cs.addEventListener('click',function(){send(ci.value)});
+    ci.addEventListener('keydown',function(e){if(e.key==='Enter')send(ci.value)});
+    function send(msg){
+      msg=msg.trim();if(!msg)return;ci.value='';
+      var msgs=document.getElementById('sf-chat-msgs');
+      msgs.innerHTML+='<div class="sf-chat-msg user">'+esc(msg)+'</div>';
+      msgs.innerHTML+='<div class="sf-chat-msg bot typing" id="sf-typing">Mengetik...</div>';
+      msgs.scrollTop=msgs.scrollHeight;
+      document.getElementById('sf-chat-sugg').style.display='none';
+      apiPost('/api/chat',{message:msg,articleContent:artText,articleTitle:artTitle})
+      .then(function(d){var t=document.getElementById('sf-typing');if(t)t.remove();
+        msgs.innerHTML+='<div class="sf-chat-msg bot">'+esc(d.reply||d.error||'Maaf, terjadi kesalahan.')+'</div>';
+        msgs.scrollTop=msgs.scrollHeight;})
+      .catch(function(){var t=document.getElementById('sf-typing');if(t)t.remove();
+        msgs.innerHTML+='<div class="sf-chat-msg bot">Tidak dapat terhubung ke server.</div>';});
+    }
+  }
+
+  // ═════════════════════════════════════════
+  // 3. ARTIKEL TERKAIT
+  // ═════════════════════════════════════════
+  function buildRecs(articleBody){
+    var links=document.querySelectorAll('a[href*="/article/"]');
+    var arts=[],seen={};
+    links.forEach(function(a){var h=a.getAttribute('href');
+      if(h&&h!==window.location.pathname&&!seen[h]&&h.length>10){seen[h]=true;var t=a.textContent.trim();if(t.length>10) arts.push({href:h,title:t})}});
+    arts=arts.slice(0,6);
+    var container=document.querySelector('.sf-article-main')||articleBody.parentElement;
+    var sec=document.createElement('div');sec.className='sf-recommendations';
+    sec.innerHTML='<h2 class="sf-rec-title">Artikel Terkait</h2><div class="sf-rec-grid" id="sf-rec-grid"></div>';
+    container.appendChild(sec);
+    var grid=sec.querySelector('#sf-rec-grid');
+    var colors=['#667eea,#764ba2','#f093fb,#f5576c','#4facfe,#00f2fe','#43e97b,#38f9d7','#fa709a,#fee140','#a18cd1,#fbc2eb'];
+    if(arts.length===0){grid.innerHTML='<p style="text-align:center;color:#999;grid-column:1/-1">Belum ada rekomendasi.</p>';return}
+    arts.forEach(function(a,i){var c=colors[i%colors.length];var card=document.createElement('div');card.className='sf-rec-card';
+      card.innerHTML='<div class="sf-rec-card-img" style="background:linear-gradient(135deg,'+c+')">SF</div><div class="sf-rec-card-body"><div class="sf-rec-card-meta">Article</div><a href="'+a.href+'" class="sf-rec-card-link">'+esc(a.title.substring(0,80))+'</a><p class="sf-rec-card-excerpt">'+esc(a.title.substring(0,120))+'</p></div>';
+      grid.appendChild(card)});
+  }
+
+  // ═════════════════════════════════════════
+  // 4. KOMENTAR
+  // ═════════════════════════════════════════
+  function buildComments(articleBody){
+    var container=document.querySelector('.sf-article-main')||articleBody.parentElement;
+    var sec=document.createElement('div');sec.className='sf-comments';
+    sec.innerHTML='<h2 class="sf-comments-title">Komentar</h2>'+
+      '<div class="sf-comment-form" id="sf-cf"><input type="text" id="sf-cn" placeholder="Nama Anda *"><input type="email" id="sf-ce" placeholder="Email (opsional)"><textarea id="sf-cm" placeholder="Tulis komentar Anda..."></textarea><button id="sf-cb">Kirim Komentar</button></div>'+
+      '<div id="sf-cl"></div>';
+    container.appendChild(sec);
+    var fp=getFP();
+    document.getElementById('sf-cb').addEventListener('click',function(){
+      var n=document.getElementById('sf-cn').value.trim(),e=document.getElementById('sf-ce').value.trim(),m=document.getElementById('sf-cm').value.trim();
+      if(!n||!m) return alert('Nama dan komentar wajib diisi!');
+      apiPost('/api/comments',{article_slug:SLUG,name:n,email:e,message:m}).then(function(){document.getElementById('sf-cm').value='';load()});
+    });
+    function load(){
+      apiGet('/api/comments?slug='+encodeURIComponent(SLUG))
+      .then(function(d){render(d)})
+      .catch(function(){document.getElementById('sf-cl').innerHTML='<p class="sf-no-comments">Tidak dapat memuat komentar.</p>'});
+    }
+    function render(comments){
+      var el=document.getElementById('sf-cl');
+      if(!comments||comments.length===0){el.innerHTML='<p class="sf-no-comments">Belum ada komentar. Jadilah yang pertama!</p>';return}
+      el.innerHTML='';comments.forEach(function(c){el.appendChild(mkComment(c))});
+    }
+    function mkComment(c){
+      var div=document.createElement('div');div.className='sf-comment-item';
+      div.innerHTML='<div class="sf-comment-header"><span class="sf-comment-name">'+esc(c.name)+'</span><span class="sf-comment-date">'+timeAgo(c.created_at)+'</span></div>'+
+        '<div class="sf-comment-text">'+esc(c.message)+'</div>'+
+        '<div class="sf-comment-actions"><button class="sf-lk" data-id="'+c.id+'">\uD83D\uDC4D <span>'+(c.likes||0)+'</span></button><button class="sf-dk" data-id="'+c.id+'">\uD83D\uDC4E <span>'+(c.dislikes||0)+'</span></button><button class="sf-rp" data-id="'+c.id+'">Balas</button></div>';
+      div.querySelector('.sf-lk').addEventListener('click',function(){react(c.id,'like')});
+      div.querySelector('.sf-dk').addEventListener('click',function(){react(c.id,'dislike')});
+      div.querySelector('.sf-rp').addEventListener('click',function(){toggleReply(div,c.id)});
+      if(c.replies&&c.replies.length>0){var rDiv=document.createElement('div');rDiv.className='sf-replies';
+        c.replies.forEach(function(r){rDiv.appendChild(mkComment(r))});div.appendChild(rDiv)}
+      return div;
+    }
+    function toggleReply(el,pid){
+      var ex=el.querySelector('.sf-reply-form');if(ex){ex.remove();return}
+      var f=document.createElement('div');f.className='sf-reply-form';
+      f.innerHTML='<input type="text" placeholder="Nama Anda *" class="sf-rn"><textarea placeholder="Tulis balasan..." class="sf-rm"></textarea><div class="sf-reply-form-btns"><button class="sf-btn-submit">Balas</button><button class="sf-btn-cancel">Batal</button></div>';
+      f.querySelector('.sf-btn-cancel').addEventListener('click',function(){f.remove()});
+      f.querySelector('.sf-btn-submit').addEventListener('click',function(){
+        var n=f.querySelector('.sf-rn').value.trim(),m=f.querySelector('.sf-rm').value.trim();if(!n||!m)return;
+        apiPost('/api/comments',{article_slug:SLUG,parent_id:pid,name:n,email:'',message:m}).then(function(){load()});
+      });
+      el.appendChild(f);
+    }
+    function react(id,type){
+      apiPost('/api/react',{comment_id:id,reaction_type:type,user_fingerprint:fp}).then(function(){load()});
+    }
+    load();
+  }
+
+  // BOOT
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
+</script>

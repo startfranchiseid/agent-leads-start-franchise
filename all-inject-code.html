@@ -2848,7 +2848,7 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 
 <!-- GANTI URL INI DENGAN URL RENDER ANDA SETELAH DEPLOY -->
-<script>window.SF_API_BASE = 'https://article-backend-hjnk.onrender.com';</script>
+<script>window.SF_API_BASE = 'https://article-backend-18dy.onrender.com';</script>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- CSS                                                            -->
@@ -3634,65 +3634,65 @@
             var grid = sec.querySelector('#sf-rec-grid');
 
             fetch('/article')
-              .then(function(r) { return r.text() })
-              .then(function(html) {
-                var parser = new DOMParser();
-                var doc = parser.parseFromString(html, 'text/html');
-                var cards = doc.querySelectorAll('.blog-basic-grid--container');
-                var articles = [];
-                var currentPath = window.location.pathname;
+                .then(function (r) { return r.text() })
+                .then(function (html) {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var cards = doc.querySelectorAll('.blog-basic-grid--container');
+                    var articles = [];
+                    var currentPath = window.location.pathname;
 
-                cards.forEach(function(card) {
-                  var titleEl = card.querySelector('.blog-title a');
-                  var imgEl = card.querySelector('.image-wrapper img');
-                  var excerptEl = card.querySelector('.blog-excerpt p');
-                  var dateEl = card.querySelector('.blog-date');
-                  if (!titleEl) return;
+                    cards.forEach(function (card) {
+                        var titleEl = card.querySelector('.blog-title a');
+                        var imgEl = card.querySelector('.image-wrapper img');
+                        var excerptEl = card.querySelector('.blog-excerpt p');
+                        var dateEl = card.querySelector('.blog-date');
+                        if (!titleEl) return;
 
-                  var href = titleEl.getAttribute('href') || '';
-                  if (href === currentPath) return; // skip current article
+                        var href = titleEl.getAttribute('href') || '';
+                        if (href === currentPath) return; // skip current article
 
-                  var imgSrc = '';
-                  if (imgEl) {
-                    imgSrc = imgEl.getAttribute('data-src') || imgEl.getAttribute('src') || '';
-                    if (imgSrc && !imgSrc.startsWith('http')) imgSrc = 'https://www.startfranchise.id' + imgSrc;
-                  }
+                        var imgSrc = '';
+                        if (imgEl) {
+                            imgSrc = imgEl.getAttribute('data-src') || imgEl.getAttribute('src') || '';
+                            if (imgSrc && !imgSrc.startsWith('http')) imgSrc = 'https://www.startfranchise.id' + imgSrc;
+                        }
 
-                  articles.push({
-                    title: titleEl.textContent.trim(),
-                    href: href,
-                    image: imgSrc,
-                    excerpt: excerptEl ? excerptEl.textContent.trim().substring(0, 120) + '...' : '',
-                    date: dateEl ? dateEl.textContent.trim() : ''
-                  });
+                        articles.push({
+                            title: titleEl.textContent.trim(),
+                            href: href,
+                            image: imgSrc,
+                            excerpt: excerptEl ? excerptEl.textContent.trim().substring(0, 120) + '...' : '',
+                            date: dateEl ? dateEl.textContent.trim() : ''
+                        });
+                    });
+
+                    articles = articles.slice(0, 6);
+                    grid.innerHTML = '';
+
+                    if (articles.length === 0) {
+                        grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Belum ada rekomendasi.</p>';
+                        return;
+                    }
+
+                    articles.forEach(function (a) {
+                        var card = document.createElement('div');
+                        card.className = 'sf-rec-card';
+                        var imgHtml = a.image
+                            ? '<a href="' + a.href + '"><img src="' + a.image + '?format=500w" alt="' + esc(a.title) + '" style="width:100%;height:180px;object-fit:cover;display:block" loading="lazy"></a>'
+                            : '<div class="sf-rec-card-img" style="background:linear-gradient(135deg,#667eea,#764ba2)">SF</div>';
+                        card.innerHTML = imgHtml +
+                            '<div class="sf-rec-card-body">' +
+                            '<div class="sf-rec-card-meta">' + (a.date || 'Article') + '</div>' +
+                            '<a href="' + a.href + '" class="sf-rec-card-link">' + esc(a.title.substring(0, 80)) + '</a>' +
+                            '<p class="sf-rec-card-excerpt">' + esc(a.excerpt) + '</p>' +
+                            '</div>';
+                        grid.appendChild(card);
+                    });
+                })
+                .catch(function () {
+                    grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Gagal memuat artikel terkait.</p>';
                 });
-
-                articles = articles.slice(0, 6);
-                grid.innerHTML = '';
-
-                if (articles.length === 0) {
-                  grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Belum ada rekomendasi.</p>';
-                  return;
-                }
-
-                articles.forEach(function(a) {
-                  var card = document.createElement('div');
-                  card.className = 'sf-rec-card';
-                  var imgHtml = a.image
-                    ? '<a href="' + a.href + '"><img src="' + a.image + '?format=500w" alt="' + esc(a.title) + '" style="width:100%;height:180px;object-fit:cover;display:block" loading="lazy"></a>'
-                    : '<div class="sf-rec-card-img" style="background:linear-gradient(135deg,#667eea,#764ba2)">SF</div>';
-                  card.innerHTML = imgHtml +
-                    '<div class="sf-rec-card-body">' +
-                    '<div class="sf-rec-card-meta">' + (a.date || 'Article') + '</div>' +
-                    '<a href="' + a.href + '" class="sf-rec-card-link">' + esc(a.title.substring(0, 80)) + '</a>' +
-                    '<p class="sf-rec-card-excerpt">' + esc(a.excerpt) + '</p>' +
-                    '</div>';
-                  grid.appendChild(card);
-                });
-              })
-              .catch(function() {
-                grid.innerHTML = '<p style="text-align:center;color:#999;grid-column:1/-1">Gagal memuat artikel terkait.</p>';
-              });
         }
 
         // ═════════════════════════════════════════
@@ -3709,7 +3709,7 @@
             document.getElementById('sf-cb').addEventListener('click', function () {
                 var n = document.getElementById('sf-cn').value.trim(), e = document.getElementById('sf-ce').value.trim(), m = document.getElementById('sf-cm').value.trim();
                 if (!n || !m) return alert('Nama dan komentar wajib diisi!');
-                apiPost('/api/comments', { article_slug: SLUG, name: n, email: e, message: m }).then(function (d) { if(d.error){alert(d.error);return;} document.getElementById('sf-cm').value = ''; load() }).catch(function(){alert('Gagal mengirim komentar')});
+                apiPost('/api/comments', { article_slug: SLUG, name: n, email: e, message: m, fingerprint: fp }).then(function (d) { if (d.error) { alert(d.error); return; } document.getElementById('sf-cm').value = ''; load() }).catch(function () { alert('Gagal mengirim komentar') });
             });
             function load() {
                 apiGet('/api/comments?slug=' + encodeURIComponent(SLUG))
@@ -3723,13 +3723,16 @@
             }
             function mkComment(c) {
                 var div = document.createElement('div'); div.className = 'sf-comment-item';
+                var delHtml = (c.user_fingerprint === fp) ? '<button class="sf-del" data-id="' + c.id + '" style="color:#e74c3c">\uD83D\uDDD1\uFE0F Hapus</button>' : '';
                 div.innerHTML = '<div class="sf-comment-header"><span class="sf-comment-name">' + esc(c.name) + '</span><span class="sf-comment-date">' + timeAgo(c.created_at) + '</span></div>' +
                     '<div class="sf-comment-text">' + esc(c.message) + '</div>' +
-                    '<div class="sf-comment-actions"><button class="sf-lk" data-id="' + c.id + '">\uD83D\uDC4D <span>' + (c.likes || 0) + '</span></button><button class="sf-dk" data-id="' + c.id + '">\uD83D\uDC4E <span>' + (c.dislikes || 0) + '</span></button><button class="sf-rp" data-id="' + c.id + '">Balas</button><button class="sf-del" data-id="' + c.id + '" style="color:#e74c3c">\uD83D\uDDD1\uFE0F Hapus</button></div>';
+                    '<div class="sf-comment-actions"><button class="sf-lk" data-id="' + c.id + '">\uD83D\uDC4D <span>' + (c.likes || 0) + '</span></button><button class="sf-dk" data-id="' + c.id + '">\uD83D\uDC4E <span>' + (c.dislikes || 0) + '</span></button><button class="sf-rp" data-id="' + c.id + '">Balas</button>' + delHtml + '</div>';
                 div.querySelector('.sf-lk').addEventListener('click', function () { react(c.id, 'like') });
                 div.querySelector('.sf-dk').addEventListener('click', function () { react(c.id, 'dislike') });
                 div.querySelector('.sf-rp').addEventListener('click', function () { toggleReply(div, c.id) });
-                div.querySelector('.sf-del').addEventListener('click', function () { deleteComment(c.id) });
+                if (c.user_fingerprint === fp) {
+                    div.querySelector('.sf-del').addEventListener('click', function () { deleteComment(c.id) });
+                }
                 if (c.replies && c.replies.length > 0) {
                     var rDiv = document.createElement('div'); rDiv.className = 'sf-replies';
                     c.replies.forEach(function (r) { rDiv.appendChild(mkComment(r)) }); div.appendChild(rDiv)
@@ -3743,7 +3746,7 @@
                 f.querySelector('.sf-btn-cancel').addEventListener('click', function () { f.remove() });
                 f.querySelector('.sf-btn-submit').addEventListener('click', function () {
                     var n = f.querySelector('.sf-rn').value.trim(), m = f.querySelector('.sf-rm').value.trim(); if (!n || !m) return;
-                    apiPost('/api/comments', { article_slug: SLUG, parent_id: pid, name: n, email: '', message: m }).then(function () { load() });
+                    apiPost('/api/comments', { article_slug: SLUG, parent_id: pid, name: n, email: '', message: m, fingerprint: fp }).then(function () { load() });
                 });
                 el.appendChild(f);
             }
@@ -3752,7 +3755,7 @@
             }
             function deleteComment(id) {
                 if (!confirm('Hapus komentar ini?')) return;
-                fetch(API + '/api/comments/' + id + '?fingerprint=' + fp, { method: 'DELETE' }).then(function(r){return r.json()}).then(function () { load() });
+                fetch(API + '/api/comments/' + id + '?fingerprint=' + fp, { method: 'DELETE' }).then(function (r) { return r.json() }).then(function (d) { if(d.error) alert(d.error); load() });
             }
             load();
         }

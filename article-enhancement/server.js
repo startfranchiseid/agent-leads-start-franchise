@@ -67,6 +67,13 @@ async function initDB() {
     console.log('✅ Database connected');
     conn.release();
 
+    try {
+      await pool.query('ALTER TABLE comments ADD COLUMN user_fingerprint VARCHAR(255) DEFAULT NULL');
+      console.log('✅ Added user_fingerprint to comments');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') console.error('Warning adding column:', e.message);
+    }
+
     // The tables already exist as int auto_increment from the legacy database.
     // So we don't need to force varchar(20) keys here anymore.
     console.log('✅ Database ready');
@@ -113,7 +120,7 @@ app.get('/api/comments', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 app.post('/api/comments', async (req, res) => {
   try {
-    const { article_slug, parent_id, name, email, message } = req.body;
+    const { article_slug, parent_id, name, email, message, fingerprint } = req.body;
 
     if (!name || !message || !article_slug) {
       return res.status(400).json({ error: 'Nama, pesan, dan slug wajib diisi' });
@@ -130,8 +137,8 @@ app.post('/api/comments', async (req, res) => {
     const pid = parent_id ? parseInt(parent_id, 10) : null;
 
     const [result] = await pool.execute(
-      'INSERT INTO comments (article_slug, parent_id, name, email, message) VALUES (?, ?, ?, ?, ?)',
-      [article_slug, pid, cleanName, email || '', cleanMessage]
+      'INSERT INTO comments (article_slug, parent_id, name, email, message, user_fingerprint) VALUES (?, ?, ?, ?, ?, ?)',
+      [article_slug, pid, cleanName, email || '', cleanMessage, fingerprint || null]
     );
 
     res.json({ success: true, id: result.insertId });
@@ -147,7 +154,17 @@ app.post('/api/comments', async (req, res) => {
 app.delete('/api/comments/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
+    const fingerprint = req.query.fingerprint;
+
     if (!id) return res.status(400).json({ error: 'ID komentar diperlukan' });
+    if (!fingerprint) return res.status(403).json({ error: 'Tidak dapat memverifikasi kepemilikan komentar.' });
+
+    const [rows] = await pool.execute('SELECT user_fingerprint FROM comments WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Komentar tidak ditemukan' });
+
+    if (rows[0].user_fingerprint !== fingerprint) {
+      return res.status(403).json({ error: 'Anda hanya dapat menghapus komentar Anda sendiri.' });
+    }
 
     await pool.execute('DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE parent_id = ?)', [id]);
     await pool.execute('DELETE FROM comments WHERE parent_id = ?', [id]);
